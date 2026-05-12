@@ -1,0 +1,22 @@
+# Node
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# SQLite DB (auto-générée)
+data.db
+data.db-shm
+data.db-wal
+
+# Environnement (contient des secrets/clés)
+.env
+.env.dev
+
+# Éditeurs / temporaires
+*.swp
+*.swo
+*~
+.xdp-*
+
+# Ressources locales
+locales_resources/

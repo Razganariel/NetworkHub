@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>NetworkHub</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a class="nav-brand" href="#">NetworkHub</a>
+      <div class="nav-links">
+        <button class="nav-btn active" data-view="dashboard">Tableau de bord</button>
+        <button class="nav-btn" data-view="settings">Gestion</button>
+        <button class="theme-toggle" id="theme-toggle" title="Changer le thème">🌙</button>
+      </div>
+      <button class="theme-toggle mobile-only" id="theme-toggle-mobile" title="Changer le thème">🌙</button>
+      <button class="nav-hamburger" id="hamburger" aria-label="Menu">☰</button>
+    </div>
+  </nav>
+
+  <main>
+    <!-- DASHBOARD -->
+    <section id="view-dashboard" class="view active">
+      <div class="dash-tabs">
+        <button class="dash-tab active" data-dash="grid">Vue grille</button>
+        <button class="dash-tab" data-dash="machine">Par machine</button>
+        <button class="dash-tab" data-dash="outil">Par outil</button>
+      </div>
+      <div class="toolbar">
+        <div class="toolbar-row">
+          <div class="filter-group">
+            <input type="search" id="filter-search" placeholder="Rechercher..." class="input">
+          </div>
+          <div class="filter-group">
+            <select id="filter-category" class="input">
+              <option value="">Toutes les catégories</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <select id="filter-status" class="input">
+              <option value="all">Tous les status</option>
+              <option value="online">En ligne</option>
+              <option value="offline">Hors ligne</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" id="btn-refresh">⟳</button>
+        </div>
+        <div class="toolbar-row secondary">
+          <span class="count-label" id="count-label">0 cartes</span>
+          <button class="btn btn-primary" id="btn-add-card">+ Ajouter une carte</button>
+        </div>
+      </div>
+      <div class="grid" id="grid">
+        <div class="loading">Chargement...</div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" class="view">
+      <div class="settings-tabs">
+        <button class="tab-btn active" data-tab="cards">Cartes</button>
+        <button class="tab-btn" data-tab="machines">Machines</button>
+        <button class="tab-btn" data-tab="outils">Outils</button>
+        <button class="tab-btn" data-tab="categories">Catégories</button>
+        <button class="tab-btn" data-tab="os">OS</button>
+        <button class="tab-btn" data-tab="fabriquants">Fabriquants</button>
+        <button class="tab-btn" data-tab="icons">Icônes</button>
+        <button class="tab-btn" data-tab="settings">Paramètres</button>
+      </div>
+      <div class="settings-content" id="settings-content">
+        <div class="loading">Chargement...</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- OVERLAY + MODAL -->
+  <div class="overlay" id="overlay"></div>
+  <div class="modal" id="modal">
+    <div class="modal-header">
+      <h2 id="modal-title">Titre</h2>
+      <button class="modal-close" id="modal-close">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer"></div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
