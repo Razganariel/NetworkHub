@@ -45,6 +45,7 @@ app.use((req, res, next) => {
 
 // ── Health cache (TTL and timeout from DB settings, fallback env / defaults) ──
 const healthCache = { data: null, ts: 0 };
+let healthTimer = null;
 
 function getHealthTTL() {
   const v = getSetting('healthcheck.delay', process.env.HEALCHECK_REFRESH_DELAY || process.env.HEALTHCHECK_REFRESH_DELAY || '300000');
@@ -102,22 +103,34 @@ async function checkHealth() {
   return results;
 }
 
-app.get('/api/health', async (_req, res) => {
-  const now = Date.now();
+function startHealthLoop() {
+  if (healthTimer) clearInterval(healthTimer);
   const TTL = getHealthTTL();
-  const cached = !!healthCache.data;
-  if (!cached || now - healthCache.ts > TTL) {
-    logger.debug(`Cache santé expiré (${now - healthCache.ts}ms > ${TTL}ms), rafraîchissement...`);
-    healthCache.data = await checkHealth();
-    healthCache.ts = now;
-  }
-  res.json(healthCache.data);
+  logger.info(`Boucle santé: ${TTL}ms d'intervalle`);
+  const loop = async () => {
+    try {
+      healthCache.data = await checkHealth();
+      healthCache.ts = Date.now();
+    } catch (err) {
+      logger.error('Boucle santé échouée:', err.message);
+    }
+  };
+  loop();
+  healthTimer = setInterval(loop, TTL);
+}
+
+app.get('/api/health', (_req, res) => {
+  res.json(healthCache.data || {});
 });
 
 app.post('/api/health/refresh', async (_req, res) => {
   logger.info('Refresh santé forcé');
-  healthCache.data = await checkHealth();
-  healthCache.ts = Date.now();
+  try {
+    healthCache.data = await checkHealth();
+    healthCache.ts = Date.now();
+  } catch (err) {
+    logger.error('Refresh santé forcé échoué:', err.message);
+  }
   res.json(healthCache.data);
 });
 
@@ -134,12 +147,18 @@ const KNOWN_SETTINGS = [
       { value: 'achromatopsia', label: 'Achromatopsie (monochrome)' },
     ],
     description: 'Adapter les couleurs de l\'interface aux différents types de daltonisme' },
-  { key: 'healthcheck.delay', label: 'Rafraîchissement santé (ms)', type: 'number', default: '300000', description: 'Intervalle entre chaque vérification de santé (5 min = 300000)' },
+  { key: 'healthcheck.delay', label: 'Rafraîchissement santé (ms)', type: 'number', default: '300000', description: 'Intervalle entre chaque vérification de santé des URLs (5 min = 300000)' },
   { key: 'healthcheck.timeout', label: 'Timeout requête santé (ms)', type: 'number', default: '10000', description: 'Délai max d\'attente par requête (10 sec = 10000)' },
 ];
 
 app.get('/api/settings', (_req, res) => {
   const db = getDb();
+
+
+
+
+
+  
   const stored = db.prepare('SELECT key, value FROM settings').all();
   const map = {};
   for (const s of stored) map[s.key] = s.value;
@@ -158,7 +177,7 @@ app.put('/api/settings', (req, res) => {
     db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?').run(key, value, value);
     logger.info(`Setting mis à jour : ${key} = ${value}`);
     if (key === 'debug') logger.setDebugMode(value === 'true');
-    resetHealthCache();
+    if (key.startsWith('healthcheck.')) startHealthLoop();
     res.json({ ok: true });
   } catch (err) {
     logger.error(`Erreur mise à jour setting ${key}:`, err.message);
@@ -457,4 +476,5 @@ app.get('*', (_req, res) => {
 
 app.listen(PORT, () => {
   logger.info(`NetworkHub started on http://0.0.0.0:${PORT}`);
+  startHealthLoop();
 });

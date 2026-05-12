@@ -925,6 +925,47 @@ async function openEntityModal(entityType, label, fieldDefs, item) {
       }
       closeModal();
       await loadAllEntities();
+
+      if (editMode && (entityType === 'machines' || entityType === 'outils')) {
+        const changed = [];
+        for (const card of state.cards) {
+          const match = entityType === 'machines' ? card.machine_id === item.id : card.outil_id === item.id;
+          if (!match) continue;
+          const machine = state.machines.find(m => m.id === card.machine_id);
+          const outil = state.outils.find(o => o.id === card.outil_id);
+          if (!machine || !outil) continue;
+
+          const update = {};
+          const newName = `${machine.nom} - ${outil.nom}`;
+          if (newName !== card.nom) update.nom = newName;
+
+          if (entityType === 'machines') {
+            const newBaseUrl = machine.ip;
+            if (newBaseUrl !== card.base_url) {
+              update.base_url = newBaseUrl;
+              update.url = buildUrl(card.prefix, newBaseUrl, outil.port || '', outil.main_page || '/');
+            }
+          }
+
+          if (entityType === 'outils') {
+            const baseForUrl = card.base_url || machine.ip;
+            const newUrl = buildUrl(card.prefix, baseForUrl, outil.port || '', outil.main_page || '/');
+            if (newUrl !== card.url) update.url = newUrl;
+            if (outil.categorie_id !== card.categorie_id) update.categorie_id = outil.categorie_id;
+          }
+
+          if (Object.keys(update).length) {
+            await API.updateCard(card.id, update);
+            changed.push(card.id);
+          }
+        }
+        if (changed.length) {
+          await API.refreshHealth();
+          await loadAllEntities();
+          state.health = await API.health();
+        }
+      }
+
       await renderSettingsTable();
       if (state.view === 'dashboard') {
         await populateCategoryFilter();
@@ -967,5 +1008,5 @@ document.addEventListener('keydown', (e) => {
       await loadHealth();
       renderCards();
     }
-  }, 600_000);
+  }, 30_000);
 })();
