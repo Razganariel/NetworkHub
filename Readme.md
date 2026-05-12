@@ -31,7 +31,7 @@ NetworkHub/
 ├── logger.js        # Logger (INFO/WARN/ERROR/DEBUG)
 ├── package.json
 ├── .env             # Variables d'environnement (ignoré par git)
-├── .env.dev         # Template environnement de développement
+├── .env.dev         # Template environnement de développement (ignoré par git)
 ├── data.db          # Base SQLite (auto-générée, ignorée par git)
 └── public/
     ├── index.html   # SPA shell
@@ -65,4 +65,4 @@ Filtres : `?search=`, `?categorie_id=`, `?machine_id=`
 
 ## Licence
 
-Projet personnel — non licensé.
+Projet personnel — GPL3.
