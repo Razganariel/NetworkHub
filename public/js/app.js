@@ -184,22 +184,42 @@ $$('.dash-tab').forEach(tab => {
 });
 
 // ── Filters ──
-['#filter-search', '#filter-category', '#filter-status'].forEach(id => {
-  $(id).addEventListener('input', () => {
-    state.filters.search = $('#filter-search').value;
-    state.filters.categorie_id = $('#filter-category').value;
-    state.filters.status = $('#filter-status').value;
-    renderCards();
-  });
-});
-$( '#filter-search' ).addEventListener('search', () => {
+function applyFilters() {
   state.filters.search = $('#filter-search').value;
+  state.filters.categorie_id = $('#filter-category').value;
+  state.filters.status = $('#filter-status').value;
+}
+
+$('#filter-search').addEventListener('input', () => {
+  applyFilters();
+  loadCards().then(renderCards);
+});
+
+$('#filter-search').addEventListener('search', () => {
+  applyFilters();
+  loadCards().then(renderCards);
+});
+
+$('#filter-category').addEventListener('input', () => {
+  applyFilters();
+  loadCards().then(renderCards);
+});
+
+$('#filter-status').addEventListener('input', () => {
+  applyFilters();
   renderCards();
 });
 
 $('#btn-refresh').addEventListener('click', async () => {
-  $('#btn-refresh').textContent = '⟳';
   await refreshDashboard();
+});
+
+$('#btn-reset').addEventListener('click', () => {
+  $('#filter-search').value = '';
+  $('#filter-category').value = '';
+  $('#filter-status').value = 'all';
+  applyFilters();
+  loadCards().then(renderCards);
 });
 
 $('#btn-add-card').addEventListener('click', () => openCardModal());
