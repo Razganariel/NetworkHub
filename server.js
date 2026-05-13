@@ -75,6 +75,7 @@ app.post('/api/auth/login', (req, res) => {
   const token = crypto.randomBytes(32).toString('hex');
   sessions.set(token, { id: user.id, nom: user.nom, prenom: user.prenom, username: user.username, email: user.email || '', role: user.role });
   logger.info(`Connexion : ${username}`);
+  if (!healthTimer) startHealthLoop();
   res.json({ token, user: { id: user.id, nom: user.nom, prenom: user.prenom, username: user.username, email: user.email || '', role: user.role } });
 });
 
@@ -627,5 +628,4 @@ app.get('*', (_req, res) => {
 
 app.listen(PORT, () => {
   logger.info(`NetworkHub started on http://0.0.0.0:${PORT}`);
-  startHealthLoop();
 });

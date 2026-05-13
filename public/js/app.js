@@ -91,6 +91,8 @@ const state = {
   filters: { search: '', categorie_id: '', status: 'all' },
 };
 
+let healthPollTimer = null;
+
 // ── Helpers ──
 function $(sel, ctx) { return (ctx || document).querySelector(sel); }
 function $$(sel, ctx) { return [...(ctx || document).querySelectorAll(sel)]; }
@@ -230,6 +232,7 @@ $('#btn-logout').addEventListener('click', async () => {
 });
 
 function showLogin() {
+  if (healthPollTimer) { clearInterval(healthPollTimer); healthPollTimer = null; }
   $('#login-page').style.display = 'flex';
   $('#app-nav').style.display = 'none';
   $('#app-main').style.display = 'none';
@@ -250,6 +253,14 @@ function showApp() {
   if (dv) dv.classList.add('active');
   activateDashTab(state.dashboardTab);
   refreshDashboard();
+  if (!healthPollTimer) {
+    healthPollTimer = setInterval(async () => {
+      if (state.view === 'dashboard') {
+        await loadHealth();
+        renderCards();
+      }
+    }, 30_000);
+  }
 }
 
 // ── Dashboard tabs ──
@@ -1377,10 +1388,4 @@ document.addEventListener('keydown', (e) => {
   } else {
     showLogin();
   }
-  setInterval(async () => {
-    if (state.view === 'dashboard') {
-      await loadHealth();
-      renderCards();
-    }
-  }, 30_000);
 })();
