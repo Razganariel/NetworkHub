@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import crypto from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = path.join(__dirname, 'data.db');
@@ -18,6 +19,18 @@ export function getDb() {
     seedIfEmpty();
   }
   return db;
+}
+
+export function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
+export function verifyPassword(password, stored) {
+  const [salt, hash] = stored.split(':');
+  const check = crypto.scryptSync(password, salt, 64).toString('hex');
+  return hash === check;
 }
 
 function initTables() {
@@ -92,6 +105,26 @@ function initTables() {
       value TEXT NOT NULL DEFAULT ''
     )
   `);
+
+  // Migration: add users table if missing
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nom TEXT NOT NULL DEFAULT '',
+      prenom TEXT NOT NULL DEFAULT '',
+      username TEXT NOT NULL UNIQUE,
+      password TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'admin'))
+    )
+  `);
+
+  // Seed default admin user if users table is empty
+  const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
+  if (userCount === 0) {
+    const adminPassword = hashPassword('admin');
+    db.prepare('INSERT INTO users (nom, prenom, username, password, role) VALUES (?, ?, ?, ?, ?)')
+      .run('Admin', 'Super', 'admin', adminPassword, 'admin');
+  }
 }
 
 export function getSetting(key, defaultVal) {

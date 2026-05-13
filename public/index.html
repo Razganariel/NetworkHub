@@ -13,6 +13,7 @@
       <div class="nav-links">
         <button class="nav-btn active" data-view="dashboard">Tableau de bord</button>
         <button class="nav-btn" data-view="settings">Gestion</button>
+        <button class="nav-btn" data-view="profile">Mon profil</button>
         <button class="theme-toggle" id="theme-toggle" title="Changer le thème">🌙</button>
       </div>
       <button class="theme-toggle mobile-only" id="theme-toggle-mobile" title="Changer le thème">🌙</button>
@@ -60,6 +61,12 @@
       </div>
     </section>
 
+    <!-- PROFILE -->
+    <section id="view-profile" class="view">
+      <h3 style="font-size:1.05rem;font-weight:600;margin-bottom:1rem">Mon profil</h3>
+      <div id="profile-form"></div>
+    </section>
+
     <!-- SETTINGS -->
     <section id="view-settings" class="view">
       <div class="settings-tabs">
@@ -70,6 +77,7 @@
         <button class="tab-btn" data-tab="os">OS</button>
         <button class="tab-btn" data-tab="fabriquants">Fabriquants</button>
         <button class="tab-btn" data-tab="icons">Icônes</button>
+        <button class="tab-btn" data-tab="comptes">Comptes</button>
         <button class="tab-btn" data-tab="settings">Paramètres</button>
       </div>
       <div class="settings-content" id="settings-content">

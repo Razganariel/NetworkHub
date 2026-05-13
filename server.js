@@ -5,7 +5,7 @@ import path from 'path';
 import http from 'http';
 import https from 'https';
 import { fileURLToPath } from 'url';
-import { getDb, getSetting } from './db.js';
+import { getDb, getSetting, hashPassword, verifyPassword } from './db.js';
 import * as logger from './logger.js';
 
 if (process.env.NODE_ENV === 'development') {
@@ -181,6 +181,98 @@ app.put('/api/settings', (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     logger.error(`Erreur mise à jour setting ${key}:`, err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ── Users / Auth ──
+function getDefaultUser() {
+  return getDb().prepare('SELECT id, nom, prenom, username, role FROM users ORDER BY role DESC, id ASC LIMIT 1').get();
+}
+
+app.get('/api/users/me', (req, res) => {
+  const user = getDefaultUser();
+  if (!user) return res.status(404).json({ error: 'No user found' });
+  res.json(user);
+});
+
+app.put('/api/users/me', (req, res) => {
+  const db = getDb();
+  const user = getDefaultUser();
+  if (!user) return res.status(404).json({ error: 'No user found' });
+  const { nom, prenom, username, password } = req.body;
+  try {
+    const updates = [];
+    const vals = [];
+    if (nom !== undefined) { updates.push('nom = ?'); vals.push(nom); }
+    if (prenom !== undefined) { updates.push('prenom = ?'); vals.push(prenom); }
+    if (username !== undefined) { updates.push('username = ?'); vals.push(username); }
+    if (password) { updates.push('password = ?'); vals.push(hashPassword(password)); }
+    if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
+    db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...vals, user.id);
+    logger.info(`Profil utilisateur mis à jour : id=${user.id}`);
+    res.json(getDefaultUser());
+  } catch (err) {
+    logger.error(`Erreur mise à jour profil id=${user.id}:`, err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/users', (req, res) => {
+  res.json(getDb().prepare('SELECT id, nom, prenom, username, role FROM users ORDER BY username ASC').all());
+});
+
+app.post('/api/users', (req, res) => {
+  const db = getDb();
+  const { nom, prenom, username, password, role } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'username and password are required' });
+  try {
+    const stmt = db.prepare('INSERT INTO users (nom, prenom, username, password, role) VALUES (?, ?, ?, ?, ?)');
+    const result = stmt.run(nom || '', prenom || '', username, hashPassword(password), role || 'user');
+    const row = db.prepare('SELECT id, nom, prenom, username, role FROM users WHERE id = ?').get(result.lastInsertRowid);
+    logger.info(`Utilisateur créé : ${username} (id=${result.lastInsertRowid})`);
+    res.status(201).json(row);
+  } catch (err) {
+    logger.error(`Erreur création utilisateur ${username}:`, err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/users/:id', (req, res) => {
+  const db = getDb();
+  const { nom, prenom, username, password, role } = req.body;
+  try {
+    const updates = [];
+    const vals = [];
+    if (nom !== undefined) { updates.push('nom = ?'); vals.push(nom); }
+    if (prenom !== undefined) { updates.push('prenom = ?'); vals.push(prenom); }
+    if (username !== undefined) { updates.push('username = ?'); vals.push(username); }
+    if (password) { updates.push('password = ?'); vals.push(hashPassword(password)); }
+    if (role !== undefined) { updates.push('role = ?'); vals.push(role); }
+    if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
+    db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...vals, req.params.id);
+    const row = db.prepare('SELECT id, nom, prenom, username, role FROM users WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    logger.info(`Utilisateur modifié : id=${req.params.id}`);
+    res.json(row);
+  } catch (err) {
+    logger.error(`Erreur modification utilisateur id=${req.params.id}:`, err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/users/:id', (req, res) => {
+  const db = getDb();
+  const user = getDefaultUser();
+  if (user && user.id === parseInt(req.params.id)) {
+    return res.status(400).json({ error: 'Cannot delete your own account' });
+  }
+  try {
+    db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+    logger.info(`Utilisateur supprimé : id=${req.params.id}`);
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error(`Erreur suppression utilisateur id=${req.params.id}:`, err.message);
     res.status(400).json({ error: err.message });
   }
 });

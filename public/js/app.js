@@ -46,6 +46,13 @@ const API = {
 
   settings() { return this.get('/api/settings'); },
   updateSetting(key, value) { return this.put('/api/settings', { key, value }); },
+
+  me() { return this.get('/api/users/me'); },
+  updateMe(d) { return this.put('/api/users/me', d); },
+  users() { return this.get('/api/users'); },
+  createUser(d) { return this.post('/api/users', d); },
+  updateUser(id, d) { return this.put('/api/users/' + id, d); },
+  deleteUser(id) { return this.del('/api/users/' + id); },
 };
 
 // ── State ──
@@ -59,6 +66,8 @@ const state = {
   icons: [],
   settings: [],
   health: {},
+  users: [],
+  me: null,
   view: 'dashboard',
   settingsTab: 'cards',
   dashboardTab: localStorage.getItem('nh-dash-tab') || 'grid',
@@ -145,7 +154,11 @@ $$('.nav-btn').forEach(btn => {
     if (state.view === 'dashboard') {
       activateDashTab(state.dashboardTab);
       refreshDashboard();
-    } else if (state.view === 'settings') renderSettings();
+    } else if (state.view === 'settings') {
+      renderSettings();
+    } else if (state.view === 'profile') {
+      renderProfile();
+    }
   });
 });
 
@@ -567,6 +580,57 @@ async function openCardModal(card) {
   $('#modal-cancel').addEventListener('click', closeModal);
 }
 
+// ── Profile ──
+async function renderProfile() {
+  if (!state.me) state.me = await API.me();
+  const u = state.me;
+
+  $('#profile-form').innerHTML = `
+    <div class="form-group">
+      <label>Nom</label>
+      <input class="input" id="profile-nom" value="${esc(u.nom || '')}">
+    </div>
+    <div class="form-group">
+      <label>Prénom</label>
+      <input class="input" id="profile-prenom" value="${esc(u.prenom || '')}">
+    </div>
+    <div class="form-group">
+      <label>Nom d'utilisateur</label>
+      <input class="input" id="profile-username" value="${esc(u.username)}">
+    </div>
+    <div class="form-group">
+      <label>Mot de passe <span class="auto-fill">(laissez vide pour conserver l'actuel)</span></label>
+      <input class="input" id="profile-password" type="password" placeholder="Nouveau mot de passe">
+    </div>
+    <div class="form-group">
+      <label>Rôle</label>
+      <input class="input" value="${esc(u.role)}" readonly style="text-transform:capitalize">
+    </div>
+    <button class="btn btn-primary" id="profile-save">Enregistrer</button>
+    <span id="profile-msg" style="margin-left:.75rem;font-size:.85rem;color:var(--green)"></span>
+  `;
+
+  $('#profile-save').addEventListener('click', async () => {
+    const data = {
+      nom: $('#profile-nom').value,
+      prenom: $('#profile-prenom').value,
+      username: $('#profile-username').value,
+      password: $('#profile-password').value,
+    };
+    if (!data.password) delete data.password;
+    if (!data.username) { alert('Le nom d\'utilisateur est requis'); return; }
+    try {
+      state.me = await API.updateMe(data);
+      $('#profile-msg').textContent = 'Profil enregistré.';
+      $('#profile-password').value = '';
+      setTimeout(() => { $('#profile-msg').textContent = ''; }, 3000);
+    } catch (err) {
+      $('#profile-msg').textContent = 'Erreur : ' + err.message;
+      $('#profile-msg').style.color = 'var(--red)';
+    }
+  });
+}
+
 // ── Settings ──
 $$('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -582,6 +646,9 @@ async function renderSettings() {
   renderSettingsTable();
 }
 
+async function loadUsers() { state.users = await API.users(); }
+async function loadMe() { state.me = await API.me(); }
+
 async function loadAllEntities() {
   await Promise.all([
     loadCards(),
@@ -592,6 +659,7 @@ async function loadAllEntities() {
     loadFabriquants(),
     loadIcons(),
     loadSettings(),
+    loadUsers(),
   ]);
 }
 
@@ -719,6 +787,62 @@ async function renderSettingsTable() {
       });
       return;
     }
+    case 'comptes': {
+      title = 'Comptes utilisateurs';
+      fields = ['Nom', 'Prénom', 'Nom d\'utilisateur', 'Rôle'];
+      rows = state.users.map(u => ({
+        id: u.id,
+        cells: [u.nom || '-', u.prenom || '-', u.username, `<span class="tag" style="text-transform:capitalize">${esc(u.role)}</span>`],
+        deletable: !state.me || u.id !== state.me.id,
+      }));
+      container.innerHTML = html`
+        <div class="settings-header">
+          <h3>${esc(title)}</h3>
+          <button class="btn btn-primary btn-sm" id="settings-add">+ Ajouter un compte</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>${fields.map(f => `<th>${esc(f)}</th>`).join('')}<th style="width:80px">Actions</th></tr></thead>
+            <tbody>
+              ${rows.length ? rows.map(r => html`
+                <tr>
+                  ${r.cells.map(c => `<td>${c}</td>`).join('')}
+                  <td class="actions">
+                    <button class="btn-icon" data-edit="comptes-${r.id}" title="Modifier">✎</button>
+                    ${r.deletable ? `<button class="btn-icon" data-delete="comptes-${r.id}" title="Supprimer" style="color:var(--red)">✕</button>` : ''}
+                  </td>
+                </tr>
+              `).join('') : '<tr><td colspan="99" style="text-align:center;color:var(--text-muted);padding:2rem">Aucun utilisateur</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      $('#settings-add').addEventListener('click', () => openUserModal());
+
+      container.querySelectorAll('[data-edit]').forEach(el => {
+        el.addEventListener('click', async () => {
+          const id = parseInt(el.dataset.edit.split('-')[1]);
+          const u = state.users.find(x => x.id === id);
+          if (u) openUserModal(u);
+        });
+      });
+
+      container.querySelectorAll('[data-delete]').forEach(el => {
+        el.addEventListener('click', async () => {
+          const id = parseInt(el.dataset.delete.split('-')[1]);
+          if (!confirm('Supprimer définitivement ce compte ?')) return;
+          try {
+            await API.deleteUser(id);
+            await loadAllEntities();
+            renderSettingsTable();
+          } catch (err) {
+            alert('Erreur : ' + err.message);
+          }
+        });
+      });
+      return;
+    }
   }
 
   const entityMap = {
@@ -799,6 +923,73 @@ async function renderSettingsTable() {
       if (state.view === 'dashboard') await refreshDashboard();
     });
   });
+}
+
+// ── User Modal ──
+async function openUserModal(user) {
+  const editMode = !!user;
+
+  $('#modal-title').textContent = editMode ? 'Modifier le compte' : 'Ajouter un compte';
+  $('#modal-body').innerHTML = `
+    <div class="form-group">
+      <label>Nom</label>
+      <input class="input" id="user-nom" value="${esc(user ? user.nom : '')}">
+    </div>
+    <div class="form-group">
+      <label>Prénom</label>
+      <input class="input" id="user-prenom" value="${esc(user ? user.prenom : '')}">
+    </div>
+    <div class="form-group">
+      <label>Nom d'utilisateur</label>
+      <input class="input" id="user-username" value="${esc(user ? user.username : '')}">
+    </div>
+    <div class="form-group">
+      <label>Mot de passe ${editMode ? '<span class="auto-fill">(laissez vide pour conserver)</span>' : ''}</label>
+      <input class="input" id="user-password" type="password" placeholder="${editMode ? 'Nouveau mot de passe' : 'Mot de passe'}">
+    </div>
+    <div class="form-group">
+      <label>Rôle</label>
+      <select class="input" id="user-role">
+        <option value="user"${user && user.role === 'user' ? ' selected' : ''}>Utilisateur</option>
+        <option value="admin"${user && user.role === 'admin' ? ' selected' : ''}>Administrateur</option>
+      </select>
+    </div>
+  `;
+  $('#modal-footer').innerHTML = `
+    <button class="btn" id="modal-cancel">Annuler</button>
+    <button class="btn btn-primary" id="modal-save">${editMode ? 'Enregistrer' : 'Ajouter'}</button>
+  `;
+  openModal();
+
+  $('#modal-save').addEventListener('click', async () => {
+    const username = $('#user-username').value.trim();
+    const password = $('#user-password').value;
+    if (!username) { alert('Le nom d\'utilisateur est requis'); return; }
+    if (!editMode && !password) { alert('Le mot de passe est requis'); return; }
+
+    const data = {
+      nom: $('#user-nom').value,
+      prenom: $('#user-prenom').value,
+      username,
+      role: $('#user-role').value,
+    };
+    if (password) data.password = password;
+
+    try {
+      if (editMode) {
+        await API.updateUser(user.id, data);
+      } else {
+        await API.createUser(data);
+      }
+      closeModal();
+      await loadAllEntities();
+      renderSettingsTable();
+    } catch (err) {
+      alert('Erreur : ' + err.message);
+    }
+  });
+
+  $('#modal-cancel').addEventListener('click', closeModal);
 }
 
 // ── Generic Entity Modal ──
