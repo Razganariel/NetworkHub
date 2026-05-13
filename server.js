@@ -49,6 +49,7 @@ const sessions = new Map();
 
 function authMiddleware(req, res, next) {
   if (req.originalUrl === '/api/auth/login') return next();
+  if (req.originalUrl.startsWith('/api/icons/') && req.originalUrl.endsWith('/file')) return next();
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorized' });
