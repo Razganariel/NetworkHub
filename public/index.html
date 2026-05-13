@@ -7,13 +7,30 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <nav class="nav">
+  <div id="login-page" style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg);padding:1rem">
+    <div style="width:100%;max-width:380px">
+      <h2 style="font-size:1.5rem;font-weight:700;margin-bottom:.5rem;color:var(--text)">NetworkHub</h2>
+      <p style="color:var(--text-muted);margin-bottom:1.5rem;font-size:.9rem">Connectez-vous pour accéder au tableau de bord</p>
+      <div class="form-group">
+        <label>Nom d'utilisateur</label>
+        <input class="input" id="login-username" autocomplete="username" style="background:var(--bg-card)">
+      </div>
+      <div class="form-group">
+        <label>Mot de passe</label>
+        <input class="input" id="login-password" type="password" autocomplete="current-password" style="background:var(--bg-card)">
+      </div>
+      <button class="btn btn-primary" id="login-btn" style="width:100%;justify-content:center;padding:.7rem">Se connecter</button>
+      <p id="login-error" style="color:var(--red);font-size:.85rem;margin-top:.75rem;display:none"></p>
+    </div>
+  </div>
+
+  <nav class="nav" id="app-nav" style="display:none">
     <div class="nav-inner">
       <a class="nav-brand" href="#">NetworkHub</a>
       <div class="nav-links">
         <button class="nav-btn active" data-view="dashboard">Tableau de bord</button>
         <button class="nav-btn" data-view="settings">Gestion</button>
-        <button class="nav-btn" data-view="profile">Mon profil</button>
+        <button id="btn-logout" title="Se déconnecter" style="color:var(--red);background:none;border:none;padding:.5rem .75rem;font-size:.85rem;cursor:pointer">Déconnexion</button>
         <button class="theme-toggle" id="theme-toggle" title="Changer le thème">🌙</button>
       </div>
       <button class="theme-toggle mobile-only" id="theme-toggle-mobile" title="Changer le thème">🌙</button>
@@ -21,7 +38,7 @@
     </div>
   </nav>
 
-  <main>
+  <main id="app-main" style="display:none">
     <!-- DASHBOARD -->
     <section id="view-dashboard" class="view active">
       <div class="dash-tabs">
@@ -77,8 +94,9 @@
         <button class="tab-btn" data-tab="os">OS</button>
         <button class="tab-btn" data-tab="fabriquants">Fabriquants</button>
         <button class="tab-btn" data-tab="icons">Icônes</button>
-        <button class="tab-btn" data-tab="comptes">Comptes</button>
         <button class="tab-btn" data-tab="settings">Paramètres</button>
+        <button class="tab-btn" data-tab="profile">Profil</button>
+        <button class="tab-btn" data-tab="comptes" id="tab-comptes" style="display:none">Comptes</button>
       </div>
       <div class="settings-content" id="settings-content">
         <div class="loading">Chargement...</div>

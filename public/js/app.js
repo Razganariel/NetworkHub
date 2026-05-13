@@ -1,8 +1,24 @@
 const API = {
-  async get(url) { const r = await fetch(url); if (!r.ok) throw Error(r.statusText); return r.json(); },
-  async post(url, data) { const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); if (!r.ok) { const e = await r.json(); throw Error(e.error); } return r.json(); },
-  async put(url, data) { const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); if (!r.ok) { const e = await r.json(); throw Error(e.error); } return r.json(); },
-  async del(url) { const r = await fetch(url, { method: 'DELETE' }); if (!r.ok) { const e = await r.json(); throw Error(e.error); } return r.json(); },
+  _token: localStorage.getItem('nh-token'),
+  _headers() { const h = { 'Content-Type': 'application/json' }; if (this._token) h['Authorization'] = 'Bearer ' + this._token; return h; },
+  async _fetch(url, opts) {
+    opts = opts || {};
+    const headers = opts.body ? this._headers() : (this._token ? { 'Authorization': 'Bearer ' + this._token } : {});
+    const r = await fetch(url, { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
+    if (r.status === 401) {
+      this._token = null; localStorage.removeItem('nh-token'); showLogin();
+      const e = await r.json().catch(() => ({ error: 'Unauthorized' }));
+      throw Error(e.error);
+    }
+    return r;
+  },
+  async get(url) { const r = await this._fetch(url); if (!r.ok) throw Error(r.statusText); return r.json(); },
+  async post(url, data) { const r = await this._fetch(url, { method: 'POST', body: JSON.stringify(data) }); if (!r.ok) { const e = await r.json(); throw Error(e.error); } return r.json(); },
+  async put(url, data) { const r = await this._fetch(url, { method: 'PUT', body: JSON.stringify(data) }); if (!r.ok) { const e = await r.json(); throw Error(e.error); } return r.json(); },
+  async del(url) { const r = await this._fetch(url, { method: 'DELETE' }); if (!r.ok) { const e = await r.json(); throw Error(e.error); } return r.json(); },
+
+  login(username, password) { return this.post('/api/auth/login', { username, password }); },
+  logout() { return this.post('/api/auth/logout'); },
 
   cards(q) { return this.get('/api/cards' + (q ? '?' + new URLSearchParams(q) : '')); },
   card(id) { return this.get('/api/cards/' + id); },
@@ -156,8 +172,6 @@ $$('.nav-btn').forEach(btn => {
       refreshDashboard();
     } else if (state.view === 'settings') {
       renderSettings();
-    } else if (state.view === 'profile') {
-      renderProfile();
     }
   });
 });
@@ -180,6 +194,63 @@ function toggleTheme() {
   applyTheme(state.theme);
 }
 $$('.theme-toggle').forEach(el => el.addEventListener('click', toggleTheme));
+
+// ── Auth ──
+async function handleLogin() {
+  const username = $('#login-username').value.trim();
+  const password = $('#login-password').value;
+  const errEl = $('#login-error');
+  errEl.style.display = 'none';
+  if (!username || !password) { errEl.textContent = 'Veuillez remplir tous les champs'; errEl.style.display = ''; return; }
+  try {
+    const res = await API.login(username, password);
+    API._token = res.token;
+    localStorage.setItem('nh-token', res.token);
+    state.me = res.user;
+    showApp();
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.style.display = '';
+  }
+}
+
+$('#login-btn').addEventListener('click', handleLogin);
+['keydown'].forEach(ev => {
+  document.addEventListener(ev, e => {
+    if (e.key === 'Enter' && $('#login-page').style.display !== 'none') handleLogin();
+  });
+});
+
+$('#btn-logout').addEventListener('click', async () => {
+  try { await API.logout(); } catch {}
+  API._token = null;
+  localStorage.removeItem('nh-token');
+  state.me = null;
+  showLogin();
+});
+
+function showLogin() {
+  $('#login-page').style.display = 'flex';
+  $('#app-nav').style.display = 'none';
+  $('#app-main').style.display = 'none';
+  $('#login-password').value = '';
+  $('#login-error').style.display = 'none';
+}
+
+function showApp() {
+  $('#login-page').style.display = 'none';
+  $('#app-nav').style.display = '';
+  $('#app-main').style.display = '';
+  state.view = 'dashboard';
+  $$('.nav-btn').forEach(b => b.classList.remove('active'));
+  const dbBtn = $(`.nav-btn[data-view="dashboard"]`);
+  if (dbBtn) dbBtn.classList.add('active');
+  $$('.view').forEach(v => v.classList.remove('active'));
+  const dv = $('#view-dashboard');
+  if (dv) dv.classList.add('active');
+  activateDashTab(state.dashboardTab);
+  refreshDashboard();
+}
 
 // ── Dashboard tabs ──
 function activateDashTab(tabId) {
@@ -599,8 +670,11 @@ async function renderProfile() {
       <input class="input" id="profile-username" value="${esc(u.username)}">
     </div>
     <div class="form-group">
-      <label>Mot de passe <span class="auto-fill">(laissez vide pour conserver l'actuel)</span></label>
-      <input class="input" id="profile-password" type="password" placeholder="Nouveau mot de passe">
+      <label>Email</label>
+      <input class="input" id="profile-email" value="${esc(u.email || '')}" type="email">
+    </div>
+    <div class="form-group">
+      <label>Mot de passe <button class="btn btn-sm" id="profile-change-pwd" style="margin-left:.5rem">Modifier</button></label>
     </div>
     <div class="form-group">
       <label>Rôle</label>
@@ -615,20 +689,20 @@ async function renderProfile() {
       nom: $('#profile-nom').value,
       prenom: $('#profile-prenom').value,
       username: $('#profile-username').value,
-      password: $('#profile-password').value,
+      email: $('#profile-email').value,
     };
-    if (!data.password) delete data.password;
     if (!data.username) { alert('Le nom d\'utilisateur est requis'); return; }
     try {
       state.me = await API.updateMe(data);
       $('#profile-msg').textContent = 'Profil enregistré.';
-      $('#profile-password').value = '';
       setTimeout(() => { $('#profile-msg').textContent = ''; }, 3000);
     } catch (err) {
       $('#profile-msg').textContent = 'Erreur : ' + err.message;
       $('#profile-msg').style.color = 'var(--red)';
     }
   });
+
+  $('#profile-change-pwd').addEventListener('click', () => openPasswordModal());
 }
 
 // ── Settings ──
@@ -643,6 +717,15 @@ $$('.tab-btn').forEach(btn => {
 
 async function renderSettings() {
   await loadAllEntities();
+  const isAdmin = state.me && state.me.role === 'admin';
+  const comptesTab = $('#tab-comptes');
+  if (comptesTab) comptesTab.style.display = isAdmin ? '' : 'none';
+  if (!isAdmin && state.settingsTab === 'comptes') {
+    state.settingsTab = 'settings';
+    $$('.tab-btn').forEach(b => b.classList.remove('active'));
+    const st = $(`.tab-btn[data-tab="settings"]`);
+    if (st) st.classList.add('active');
+  }
   renderSettingsTable();
 }
 
@@ -660,6 +743,7 @@ async function loadAllEntities() {
     loadIcons(),
     loadSettings(),
     loadUsers(),
+    loadMe(),
   ]);
 }
 
@@ -787,12 +871,17 @@ async function renderSettingsTable() {
       });
       return;
     }
+    case 'profile': {
+      container.innerHTML = '<div id="profile-form"></div>';
+      renderProfile();
+      return;
+    }
     case 'comptes': {
       title = 'Comptes utilisateurs';
-      fields = ['Nom', 'Prénom', 'Nom d\'utilisateur', 'Rôle'];
+      fields = ['Nom', 'Prénom', 'Nom d\'utilisateur', 'Email', 'Rôle'];
       rows = state.users.map(u => ({
         id: u.id,
-        cells: [u.nom || '-', u.prenom || '-', u.username, `<span class="tag" style="text-transform:capitalize">${esc(u.role)}</span>`],
+        cells: [u.nom || '-', u.prenom || '-', u.username, u.email || '-', `<span class="tag" style="text-transform:capitalize">${esc(u.role)}</span>`],
         deletable: !state.me || u.id !== state.me.id,
       }));
       container.innerHTML = html`
@@ -925,6 +1014,53 @@ async function renderSettingsTable() {
   });
 }
 
+// ── Password Modal ──
+async function openPasswordModal(forUserId) {
+  const isOwn = !forUserId;
+  $('#modal-title').textContent = isOwn ? 'Changer mon mot de passe' : 'Changer le mot de passe';
+  $('#modal-body').innerHTML = `
+    ${isOwn ? `
+    <div class="form-group">
+      <label>Mot de passe actuel</label>
+      <input class="input" id="pwd-current" type="password" autocomplete="current-password">
+    </div>` : ''}
+    <div class="form-group">
+      <label>Nouveau mot de passe</label>
+      <input class="input" id="pwd-new" type="password" autocomplete="new-password">
+    </div>
+    <div class="form-group">
+      <label>Confirmer le mot de passe</label>
+      <input class="input" id="pwd-confirm" type="password" autocomplete="new-password">
+    </div>
+  `;
+  $('#modal-footer').innerHTML = `
+    <button class="btn" id="modal-cancel">Annuler</button>
+    <button class="btn btn-primary" id="modal-save">Enregistrer</button>
+  `;
+  openModal();
+
+  $('#modal-save').addEventListener('click', async () => {
+    const newPwd = $('#pwd-new').value;
+    const confirm = $('#pwd-confirm').value;
+    if (!newPwd || newPwd !== confirm) { alert('Les mots de passe ne correspondent pas'); return; }
+    try {
+      if (isOwn) {
+        const cur = $('#pwd-current').value;
+        if (!cur) { alert('Veuillez saisir votre mot de passe actuel'); return; }
+        await API.post('/api/users/change-password', { currentPassword: cur, newPassword: newPwd });
+      } else {
+        await API.updateUser(forUserId, { password: newPwd });
+      }
+      alert('Mot de passe mis à jour.');
+      closeModal();
+    } catch (err) {
+      alert('Erreur : ' + err.message);
+    }
+  });
+
+  $('#modal-cancel').addEventListener('click', closeModal);
+}
+
 // ── User Modal ──
 async function openUserModal(user) {
   const editMode = !!user;
@@ -944,9 +1080,17 @@ async function openUserModal(user) {
       <input class="input" id="user-username" value="${esc(user ? user.username : '')}">
     </div>
     <div class="form-group">
-      <label>Mot de passe ${editMode ? '<span class="auto-fill">(laissez vide pour conserver)</span>' : ''}</label>
-      <input class="input" id="user-password" type="password" placeholder="${editMode ? 'Nouveau mot de passe' : 'Mot de passe'}">
+      <label>Email</label>
+      <input class="input" id="user-email" value="${esc(user ? (user.email || '') : '')}" type="email">
     </div>
+    ${editMode ? `
+    <div class="form-group">
+      <label>Mot de passe <button class="btn btn-sm" id="user-change-pwd" style="margin-left:.5rem">Modifier</button></label>
+    </div>` : `
+    <div class="form-group">
+      <label>Mot de passe</label>
+      <input class="input" id="user-password" type="password" placeholder="Mot de passe">
+    </div>`}
     <div class="form-group">
       <label>Rôle</label>
       <select class="input" id="user-role">
@@ -963,7 +1107,8 @@ async function openUserModal(user) {
 
   $('#modal-save').addEventListener('click', async () => {
     const username = $('#user-username').value.trim();
-    const password = $('#user-password').value;
+    const password = $('#user-password') ? $('#user-password').value : '';
+    const email = $('#user-email').value.trim();
     if (!username) { alert('Le nom d\'utilisateur est requis'); return; }
     if (!editMode && !password) { alert('Le mot de passe est requis'); return; }
 
@@ -971,6 +1116,7 @@ async function openUserModal(user) {
       nom: $('#user-nom').value,
       prenom: $('#user-prenom').value,
       username,
+      email,
       role: $('#user-role').value,
     };
     if (password) data.password = password;
@@ -990,6 +1136,11 @@ async function openUserModal(user) {
   });
 
   $('#modal-cancel').addEventListener('click', closeModal);
+
+  const changePwdBtn = document.getElementById('user-change-pwd');
+  if (changePwdBtn) {
+    changePwdBtn.addEventListener('click', () => { closeModal(); openPasswordModal(user.id); });
+  }
 }
 
 // ── Generic Entity Modal ──
@@ -1212,8 +1363,20 @@ document.addEventListener('keydown', (e) => {
 
 // ── Init ──
 (async function init() {
-  await loadSettings();
-  await refreshDashboard();
+  const token = localStorage.getItem('nh-token');
+  if (token) {
+    API._token = token;
+    try {
+      state.me = await API.me();
+      await loadSettings();
+      await refreshDashboard();
+      showApp();
+    } catch {
+      showLogin();
+    }
+  } else {
+    showLogin();
+  }
   setInterval(async () => {
     if (state.view === 'dashboard') {
       await loadHealth();

@@ -118,12 +118,15 @@ function initTables() {
     )
   `);
 
+  // Migration: add email column
+  try { db.exec(`ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''`); } catch {}
+
   // Seed default admin user if users table is empty
   const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
   if (userCount === 0) {
     const adminPassword = hashPassword('admin');
-    db.prepare('INSERT INTO users (nom, prenom, username, password, role) VALUES (?, ?, ?, ?, ?)')
-      .run('Admin', 'Super', 'admin', adminPassword, 'admin');
+    db.prepare('INSERT INTO users (nom, prenom, username, email, password, role) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('Admin', 'Super', 'admin', 'admin@localhost', adminPassword, 'admin');
   }
 }
 

@@ -5,6 +5,7 @@ import path from 'path';
 import http from 'http';
 import https from 'https';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 import { getDb, getSetting, hashPassword, verifyPassword } from './db.js';
 import * as logger from './logger.js';
 
@@ -41,6 +42,48 @@ app.use((req, res, next) => {
     });
   }
   next();
+});
+
+// ── Auth ──
+const sessions = new Map();
+
+function authMiddleware(req, res, next) {
+  if (req.originalUrl === '/api/auth/login') return next();
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const token = header.slice(7);
+  const session = sessions.get(token);
+  if (!session) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+  req.user = session;
+  next();
+}
+
+app.use('/api', authMiddleware);
+
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'username and password are required' });
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user || !verifyPassword(password, user.password)) {
+    return res.status(401).json({ error: 'Identifiants invalides' });
+  }
+  const token = crypto.randomBytes(32).toString('hex');
+  sessions.set(token, { id: user.id, nom: user.nom, prenom: user.prenom, username: user.username, email: user.email || '', role: user.role });
+  logger.info(`Connexion : ${username}`);
+  res.json({ token, user: { id: user.id, nom: user.nom, prenom: user.prenom, username: user.username, email: user.email || '', role: user.role } });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const header = req.headers.authorization;
+  if (header && header.startsWith('Bearer ')) {
+    sessions.delete(header.slice(7));
+  }
+  res.json({ ok: true });
 });
 
 // ── Health cache (TTL and timeout from DB settings, fallback env / defaults) ──
@@ -185,51 +228,67 @@ app.put('/api/settings', (req, res) => {
   }
 });
 
-// ── Users / Auth ──
-function getDefaultUser() {
-  return getDb().prepare('SELECT id, nom, prenom, username, role FROM users ORDER BY role DESC, id ASC LIMIT 1').get();
-}
-
+// ── Users ──
 app.get('/api/users/me', (req, res) => {
-  const user = getDefaultUser();
-  if (!user) return res.status(404).json({ error: 'No user found' });
-  res.json(user);
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  res.json(req.user);
 });
 
 app.put('/api/users/me', (req, res) => {
   const db = getDb();
-  const user = getDefaultUser();
-  if (!user) return res.status(404).json({ error: 'No user found' });
-  const { nom, prenom, username, password } = req.body;
+  const user = req.user;
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  const { nom, prenom, username, email } = req.body;
   try {
     const updates = [];
     const vals = [];
     if (nom !== undefined) { updates.push('nom = ?'); vals.push(nom); }
     if (prenom !== undefined) { updates.push('prenom = ?'); vals.push(prenom); }
     if (username !== undefined) { updates.push('username = ?'); vals.push(username); }
-    if (password) { updates.push('password = ?'); vals.push(hashPassword(password)); }
+    if (email !== undefined) { updates.push('email = ?'); vals.push(email); }
     if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
     db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...vals, user.id);
     logger.info(`Profil utilisateur mis à jour : id=${user.id}`);
-    res.json(getDefaultUser());
+    const updated = db.prepare('SELECT id, nom, prenom, username, email, role FROM users WHERE id = ?').get(user.id);
+    const header = req.headers.authorization;
+    if (header && header.startsWith('Bearer ')) {
+      const tok = header.slice(7);
+      if (sessions.has(tok)) sessions.set(tok, { ...sessions.get(tok), ...updated });
+    }
+    res.json(updated);
   } catch (err) {
     logger.error(`Erreur mise à jour profil id=${user.id}:`, err.message);
     res.status(400).json({ error: err.message });
   }
 });
 
+app.post('/api/users/change-password', (req, res) => {
+  const db = getDb();
+  const user = req.user;
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: 'currentPassword and newPassword are required' });
+  const stored = db.prepare('SELECT password FROM users WHERE id = ?').get(user.id);
+  if (!stored || !verifyPassword(currentPassword, stored.password)) {
+    return res.status(401).json({ error: 'Mot de passe actuel incorrect' });
+  }
+  db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashPassword(newPassword), user.id);
+  logger.info(`Mot de passe changé : id=${user.id}`);
+  res.json({ ok: true });
+});
+
 app.get('/api/users', (req, res) => {
-  res.json(getDb().prepare('SELECT id, nom, prenom, username, role FROM users ORDER BY username ASC').all());
+  res.json(getDb().prepare('SELECT id, nom, prenom, username, email, role FROM users ORDER BY username ASC').all());
 });
 
 app.post('/api/users', (req, res) => {
   const db = getDb();
-  const { nom, prenom, username, password, role } = req.body;
+  const { nom, prenom, username, email, password, role } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'username and password are required' });
   try {
-    const stmt = db.prepare('INSERT INTO users (nom, prenom, username, password, role) VALUES (?, ?, ?, ?, ?)');
-    const result = stmt.run(nom || '', prenom || '', username, hashPassword(password), role || 'user');
-    const row = db.prepare('SELECT id, nom, prenom, username, role FROM users WHERE id = ?').get(result.lastInsertRowid);
+    const stmt = db.prepare('INSERT INTO users (nom, prenom, username, email, password, role) VALUES (?, ?, ?, ?, ?, ?)');
+    const result = stmt.run(nom || '', prenom || '', username, email || '', hashPassword(password), role || 'user');
+    const row = db.prepare('SELECT id, nom, prenom, username, email, role FROM users WHERE id = ?').get(result.lastInsertRowid);
     logger.info(`Utilisateur créé : ${username} (id=${result.lastInsertRowid})`);
     res.status(201).json(row);
   } catch (err) {
@@ -240,18 +299,19 @@ app.post('/api/users', (req, res) => {
 
 app.put('/api/users/:id', (req, res) => {
   const db = getDb();
-  const { nom, prenom, username, password, role } = req.body;
+  const { nom, prenom, username, email, password, role } = req.body;
   try {
     const updates = [];
     const vals = [];
     if (nom !== undefined) { updates.push('nom = ?'); vals.push(nom); }
     if (prenom !== undefined) { updates.push('prenom = ?'); vals.push(prenom); }
     if (username !== undefined) { updates.push('username = ?'); vals.push(username); }
+    if (email !== undefined) { updates.push('email = ?'); vals.push(email); }
     if (password) { updates.push('password = ?'); vals.push(hashPassword(password)); }
     if (role !== undefined) { updates.push('role = ?'); vals.push(role); }
     if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
     db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...vals, req.params.id);
-    const row = db.prepare('SELECT id, nom, prenom, username, role FROM users WHERE id = ?').get(req.params.id);
+    const row = db.prepare('SELECT id, nom, prenom, username, email, role FROM users WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Not found' });
     logger.info(`Utilisateur modifié : id=${req.params.id}`);
     res.json(row);
@@ -263,8 +323,7 @@ app.put('/api/users/:id', (req, res) => {
 
 app.delete('/api/users/:id', (req, res) => {
   const db = getDb();
-  const user = getDefaultUser();
-  if (user && user.id === parseInt(req.params.id)) {
+  if (req.user && req.user.id === parseInt(req.params.id)) {
     return res.status(400).json({ error: 'Cannot delete your own account' });
   }
   try {
