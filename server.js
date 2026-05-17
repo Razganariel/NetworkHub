@@ -6,6 +6,8 @@ import http from 'http';
 import https from 'https';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import fs from 'fs';
+import { execSync } from 'child_process';
 import { getDb, getSetting, hashPassword, verifyPassword } from './db.js';
 import * as logger from './logger.js';
 
@@ -627,6 +629,42 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, () => {
-  logger.info(`NetworkHub started on http://0.0.0.0:${PORT}`);
-});
+// ── HTTPS with auto-generated self-signed cert ──
+const CERTS_DIR = path.join(__dirname, 'certs');
+const KEY_PATH = path.join(CERTS_DIR, 'key.pem');
+const CERT_PATH = path.join(CERTS_DIR, 'cert.pem');
+
+function ensureCerts() {
+  if (fs.existsSync(KEY_PATH) && fs.existsSync(CERT_PATH)) return;
+  fs.mkdirSync(CERTS_DIR, { recursive: true });
+  logger.info('Génération du certificat auto-signé...');
+  execSync(
+    `openssl req -x509 -nodes -days 3650 -newkey rsa:2048 ` +
+    `-keyout "${KEY_PATH}" -out "${CERT_PATH}" ` +
+    `-subj "/C=XX/ST=Homelab/L=Network/O=NetworkHub/CN=localhost"`,
+    { stdio: 'pipe' }
+  );
+  logger.info('Certificat auto-signé prêt');
+}
+
+try {
+  ensureCerts();
+  const sslOptions = { key: fs.readFileSync(KEY_PATH), cert: fs.readFileSync(CERT_PATH) };
+  https.createServer(sslOptions, app).listen(PORT, () => {
+    logger.info(`NetworkHub started on https://0.0.0.0:${PORT}`);
+  });
+  // HTTP redirect server (PORT + 1)
+  const httpApp = express();
+  httpApp.use((req, res) => {
+    const host = req.headers.host?.replace(/:\d+$/, '') || 'localhost';
+    res.redirect(`https://${host}:${PORT}${req.url}`);
+  });
+  http.createServer(httpApp).listen(parseInt(PORT) + 1, () => {
+    logger.info(`HTTP→HTTPS redirect on http://0.0.0.0:${parseInt(PORT) + 1}`);
+  });
+} catch (err) {
+  logger.warn(`Impossible de démarrer en HTTPS (${err.message}) — fallback HTTP`);
+  app.listen(PORT, () => {
+    logger.info(`NetworkHub started on http://0.0.0.0:${PORT}`);
+  });
+}

@@ -162,6 +162,7 @@ function buildUrl(prefix, baseUrl, port, mainPage) {
 // ── Navigation ──
 $$('.nav-btn').forEach(btn => {
   btn.addEventListener('click', () => {
+    closeModal();
     $$('.nav-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     $$('.view').forEach(v => v.classList.remove('active'));
@@ -197,10 +198,16 @@ function toggleTheme() {
 }
 $$('.theme-toggle').forEach(el => el.addEventListener('click', toggleTheme));
 
+async function sha256(str) {
+  const enc = new TextEncoder();
+  const hash = await crypto.subtle.digest('SHA-256', enc.encode(str));
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 // ── Auth ──
 async function handleLogin() {
   const username = $('#login-username').value.trim();
-  const password = $('#login-password').value;
+  const password = await sha256($('#login-password').value);
   const errEl = $('#login-error');
   errEl.style.display = 'none';
   if (!username || !password) { errEl.textContent = 'Veuillez remplir tous les champs'; errEl.style.display = ''; return; }
@@ -232,6 +239,7 @@ $('#btn-logout').addEventListener('click', async () => {
 });
 
 function showLogin() {
+  closeModal();
   if (healthPollTimer) { clearInterval(healthPollTimer); healthPollTimer = null; }
   $('#login-page').style.display = 'flex';
   $('#app-nav').style.display = 'none';
@@ -720,6 +728,7 @@ async function renderProfile() {
 // ── Settings ──
 $$('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
+    closeModal();
     $$('.tab-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     state.settingsTab = btn.dataset.tab;
@@ -1051,13 +1060,15 @@ async function openPasswordModal(forUserId) {
   openModal();
 
   $('#modal-save').addEventListener('click', async () => {
-    const newPwd = $('#pwd-new').value;
-    const confirm = $('#pwd-confirm').value;
-    if (!newPwd || newPwd !== confirm) { alert('Les mots de passe ne correspondent pas'); return; }
+    const rawNew = $('#pwd-new').value;
+    const rawConfirm = $('#pwd-confirm').value;
+    if (!rawNew || rawNew !== rawConfirm) { alert('Les mots de passe ne correspondent pas'); return; }
+    const newPwd = await sha256(rawNew);
     try {
       if (isOwn) {
-        const cur = $('#pwd-current').value;
-        if (!cur) { alert('Veuillez saisir votre mot de passe actuel'); return; }
+        const rawCur = $('#pwd-current').value;
+        if (!rawCur) { alert('Veuillez saisir votre mot de passe actuel'); return; }
+        const cur = await sha256(rawCur);
         await API.post('/api/users/change-password', { currentPassword: cur, newPassword: newPwd });
       } else {
         await API.updateUser(forUserId, { password: newPwd });
@@ -1118,10 +1129,11 @@ async function openUserModal(user) {
 
   $('#modal-save').addEventListener('click', async () => {
     const username = $('#user-username').value.trim();
-    const password = $('#user-password') ? $('#user-password').value : '';
+    const passwordEl = $('#user-password');
+    const rawPassword = passwordEl ? passwordEl.value : '';
     const email = $('#user-email').value.trim();
     if (!username) { alert('Le nom d\'utilisateur est requis'); return; }
-    if (!editMode && !password) { alert('Le mot de passe est requis'); return; }
+    if (!editMode && !rawPassword) { alert('Le mot de passe est requis'); return; }
 
     const data = {
       nom: $('#user-nom').value,
@@ -1130,7 +1142,7 @@ async function openUserModal(user) {
       email,
       role: $('#user-role').value,
     };
-    if (password) data.password = password;
+    if (rawPassword) data.password = await sha256(rawPassword);
 
     try {
       if (editMode) {
@@ -1354,15 +1366,19 @@ async function openEntityModal(entityType, label, fieldDefs, item) {
 
 // ── Modal helpers ──
 function openModal() {
-  $('#overlay').classList.add('open');
-  $('#modal').classList.add('open');
-  document.body.style.overflow = 'hidden';
+  try {
+    $('#overlay').classList.add('open');
+    $('#modal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+  } catch {}
 }
 
 function closeModal() {
-  $('#overlay').classList.remove('open');
-  $('#modal').classList.remove('open');
-  document.body.style.overflow = '';
+  try {
+    $('#overlay').classList.remove('open');
+    $('#modal').classList.remove('open');
+    document.body.style.overflow = '';
+  } catch {}
 }
 
 $('#modal-close').addEventListener('click', closeModal);
