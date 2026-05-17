@@ -666,8 +666,9 @@ async function openCardModal(card) {
 async function renderProfile() {
   if (!state.me) state.me = await API.me();
   const u = state.me;
+  const c = $('#settings-content');
 
-  $('#profile-form').innerHTML = `
+  c.innerHTML = `
     <div class="form-group">
       <label>Nom</label>
       <input class="input" id="profile-nom" value="${esc(u.nom || '')}">
@@ -883,7 +884,6 @@ async function renderSettingsTable() {
       return;
     }
     case 'profile': {
-      container.innerHTML = '<div id="profile-form"></div>';
       renderProfile();
       return;
     }
