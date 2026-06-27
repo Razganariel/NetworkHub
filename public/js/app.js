@@ -228,10 +228,8 @@ async function handleLogin() {
 }
 
 $('#login-btn').addEventListener('click', handleLogin);
-['keydown'].forEach(ev => {
-  document.addEventListener(ev, e => {
-    if (e.key === 'Enter' && $('#login-page').style.display !== 'none') handleLogin();
-  });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && $('#login-page').style.display !== 'none') handleLogin();
 });
 
 $('#btn-logout').addEventListener('click', async () => {
