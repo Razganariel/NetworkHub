@@ -48,6 +48,7 @@ app.use((req, res, next) => {
 
 // ── Auth ──
 const sessions = new Map();
+const SESSION_TTL = 24 * 60 * 60 * 1000;
 
 function authMiddleware(req, res, next) {
   if (req.originalUrl === '/api/auth/login') return next();
@@ -61,6 +62,12 @@ function authMiddleware(req, res, next) {
   if (!session) {
     return res.status(401).json({ error: 'Invalid token' });
   }
+  if (Date.now() - session.createdAt > SESSION_TTL) {
+    sessions.delete(token);
+    return res.status(401).json({ error: 'Token expired' });
+  }
+  session.createdAt = Date.now();
+  sessions.set(token, session);
   req.user = session;
   next();
 }
@@ -76,7 +83,7 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(401).json({ error: 'Identifiants invalides' });
   }
   const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { id: user.id, nom: user.nom, prenom: user.prenom, username: user.username, email: user.email || '', role: user.role });
+  sessions.set(token, { id: user.id, nom: user.nom, prenom: user.prenom, username: user.username, email: user.email || '', role: user.role, createdAt: Date.now() });
   logger.info(`Connexion : ${username}`);
   if (!healthTimer) startHealthLoop();
   res.json({ token, user: { id: user.id, nom: user.nom, prenom: user.prenom, username: user.username, email: user.email || '', role: user.role } });
@@ -89,6 +96,16 @@ app.post('/api/auth/logout', (req, res) => {
   }
   res.json({ ok: true });
 });
+
+// Nettoyage périodique des sessions expirées
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, session] of sessions) {
+    if (now - session.createdAt > SESSION_TTL) {
+      sessions.delete(token);
+    }
+  }
+}, 60 * 60 * 1000);
 
 // ── Health cache (TTL and timeout from DB settings, fallback env / defaults) ──
 const healthCache = { data: null, ts: 0 };
