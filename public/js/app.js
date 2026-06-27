@@ -901,7 +901,7 @@ async function renderSettingsTable() {
       fields = ['Nom', 'Prénom', 'Nom d\'utilisateur', 'Email', 'Rôle'];
       rows = state.users.map(u => ({
         id: u.id,
-        cells: [u.nom || '-', u.prenom || '-', u.username, u.email || '-', `<span class="tag" style="text-transform:capitalize">${esc(u.role)}</span>`],
+        cells: [esc(u.nom || '-'), esc(u.prenom || '-'), esc(u.username), esc(u.email || '-'), `<span class="tag" style="text-transform:capitalize">${esc(u.role)}</span>`],
         deletable: !state.me || u.id !== state.me.id,
       }));
       container.innerHTML = html`
