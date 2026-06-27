@@ -441,7 +441,7 @@ function attachCardListeners(container) {
     el.addEventListener('click', async e => {
       e.stopPropagation();
       const id = parseInt(el.dataset.deleteCard);
-      if (confirm('Supprimer cette carte ?')) {
+      if (await confirmModal('Supprimer cette carte ?')) {
         await API.deleteCard(id);
         await refreshDashboard();
       }
@@ -665,7 +665,7 @@ async function openCardModal(card) {
     };
 
     if (!data.machine_id || !data.outil_id) {
-      alert('Veuillez sélectionner une machine et un outil');
+      showToast('Veuillez sélectionner une machine et un outil', 'error');
       return;
     }
 
@@ -680,7 +680,7 @@ async function openCardModal(card) {
       state.health = await API.health();
       await refreshDashboard();
     } catch (err) {
-      alert('Erreur : ' + err.message);
+      showToast('Erreur : ' + err.message, 'error');
     }
   });
 
@@ -728,7 +728,7 @@ async function renderProfile() {
       username: $('#profile-username').value,
       email: $('#profile-email').value,
     };
-    if (!data.username) { alert('Le nom d\'utilisateur est requis'); return; }
+    if (!data.username) { showToast('Le nom d\'utilisateur est requis', 'error'); return; }
     try {
       state.me = await API.updateMe(data);
       $('#profile-msg').textContent = 'Profil enregistré.';
@@ -967,13 +967,13 @@ async function renderSettingsTable() {
       container.querySelectorAll('[data-delete]').forEach(el => {
         el.addEventListener('click', async () => {
           const id = parseInt(el.dataset.delete.split('-')[1]);
-          if (!confirm('Supprimer définitivement ce compte ?')) return;
+          if (!await confirmModal('Supprimer définitivement ce compte ?')) return;
           try {
             await API.deleteUser(id);
             await loadAllEntities();
             renderSettingsTable();
           } catch (err) {
-            alert('Erreur : ' + err.message);
+      showToast('Erreur : ' + err.message, 'error');
           }
         });
       });
@@ -1052,7 +1052,7 @@ async function renderSettingsTable() {
     el.addEventListener('click', async () => {
       const [type, idStr] = el.dataset.delete.split('-');
       const id = parseInt(idStr);
-      if (!confirm('Supprimer définitivement ?')) return;
+      if (!await confirmModal('Supprimer définitivement ?')) return;
       await deleteMethods[type](id);
       await loadAllEntities();
       await renderSettingsTable();
@@ -1089,21 +1089,21 @@ async function openPasswordModal(forUserId) {
   $('#modal-save').addEventListener('click', async () => {
     const rawNew = $('#pwd-new').value;
     const rawConfirm = $('#pwd-confirm').value;
-    if (!rawNew || rawNew !== rawConfirm) { alert('Les mots de passe ne correspondent pas'); return; }
+    if (!rawNew || rawNew !== rawConfirm) { showToast('Les mots de passe ne correspondent pas', 'error'); return; }
     const newPwd = await sha256(rawNew);
     try {
       if (isOwn) {
         const rawCur = $('#pwd-current').value;
-        if (!rawCur) { alert('Veuillez saisir votre mot de passe actuel'); return; }
+        if (!rawCur) { showToast('Veuillez saisir votre mot de passe actuel', 'error'); return; }
         const cur = await sha256(rawCur);
         await API.post('/api/users/change-password', { currentPassword: cur, newPassword: newPwd });
       } else {
         await API.updateUser(forUserId, { password: newPwd });
       }
-      alert('Mot de passe mis à jour.');
+      showToast('Mot de passe mis à jour.', 'success');
       closeModal();
     } catch (err) {
-      alert('Erreur : ' + err.message);
+      showToast('Erreur : ' + err.message, 'error');
     }
   });
 
@@ -1159,8 +1159,8 @@ async function openUserModal(user) {
     const passwordEl = $('#user-password');
     const rawPassword = passwordEl ? passwordEl.value : '';
     const email = $('#user-email').value.trim();
-    if (!username) { alert('Le nom d\'utilisateur est requis'); return; }
-    if (!editMode && !rawPassword) { alert('Le mot de passe est requis'); return; }
+    if (!username) { showToast('Le nom d\'utilisateur est requis', 'error'); return; }
+    if (!editMode && !rawPassword) { showToast('Le mot de passe est requis', 'error'); return; }
 
     const data = {
       nom: $('#user-nom').value,
@@ -1181,7 +1181,7 @@ async function openUserModal(user) {
       await loadAllEntities();
       renderSettingsTable();
     } catch (err) {
-      alert('Erreur : ' + err.message);
+      showToast('Erreur : ' + err.message, 'error');
     }
   });
 
@@ -1316,7 +1316,7 @@ async function openEntityModal(entityType, label, fieldDefs, item) {
     }
 
     if (!editMode && entityType === 'icons' && !data.data) {
-      alert('Veuillez sélectionner un fichier SVG pour l\'icône');
+      showToast('Veuillez sélectionner un fichier SVG pour l\'icône', 'error');
       return;
     }
 
@@ -1384,7 +1384,7 @@ async function openEntityModal(entityType, label, fieldDefs, item) {
         await refreshDashboard();
       }
     } catch (err) {
-      alert('Erreur : ' + err.message);
+      showToast('Erreur : ' + err.message, 'error');
     }
   });
 
@@ -1414,6 +1414,43 @@ $('#overlay').addEventListener('click', closeModal);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeModal();
 });
+
+// ── Toast notifications ──
+function showToast(message, type) {
+  const existing = document.getElementById('toast');
+  if (existing) existing.remove();
+  const toast = document.createElement('div');
+  toast.id = 'toast';
+  toast.style.cssText = 'position:fixed;bottom:2rem;right:2rem;padding:.75rem 1.25rem;border-radius:8px;color:#fff;font-size:.875rem;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3);max-width:360px';
+  toast.style.background = type === 'error' ? '#f85149' : type === 'success' ? '#3fb950' : '#1f6feb';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.style.transition = 'opacity .3s';
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+// ── Confirm modal (Promise-based, remplace confirm()) ──
+function confirmModal(msg) {
+  return new Promise(resolve => {
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:1rem';
+    box.innerHTML = `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:1.5rem;max-width:400px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,.4)"><p style="margin-bottom:1.25rem;line-height:1.5">${esc(msg)}</p><div style="display:flex;gap:.75rem;justify-content:flex-end"><button class="btn" id="confirm-no">Annuler</button><button class="btn btn-danger" id="confirm-yes">Confirmer</button></div></div>`;
+    document.body.appendChild(box);
+    document.body.style.overflow = 'hidden';
+
+    function done(val) { box.remove(); document.body.style.overflow = ''; resolve(val); }
+    box.querySelector('#confirm-yes').onclick = () => done(true);
+    box.querySelector('#confirm-no').onclick = () => done(false);
+    box.onclick = e => { if (e.target === box) done(false); };
+    const escHandler = e => { if (e.key === 'Escape') done(false); };
+    document.addEventListener('keydown', escHandler);
+    box.querySelector('#confirm-yes').addEventListener('click', () => document.removeEventListener('keydown', escHandler), { once: true });
+    box.querySelector('#confirm-no').addEventListener('click', () => document.removeEventListener('keydown', escHandler), { once: true });
+  });
+}
 
 // ── Init ──
 (async function init() {
