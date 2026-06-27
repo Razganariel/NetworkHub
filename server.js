@@ -6,7 +6,6 @@ import https from 'https';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import fs from 'fs';
-import { execSync } from 'child_process';
 import { getDb, getSetting, hashPassword, verifyPassword } from './db.js';
 import * as logger from './logger.js';
 
@@ -759,6 +758,7 @@ app.get('*', (_req, res) => {
 });
 
 // ── HTTPS with auto-generated self-signed cert ──
+import selfsigned from 'selfsigned';
 const CERTS_DIR = path.join(__dirname, 'certs');
 const KEY_PATH = path.join(CERTS_DIR, 'key.pem');
 const CERT_PATH = path.join(CERTS_DIR, 'cert.pem');
@@ -767,12 +767,10 @@ function ensureCerts() {
   if (fs.existsSync(KEY_PATH) && fs.existsSync(CERT_PATH)) return;
   fs.mkdirSync(CERTS_DIR, { recursive: true });
   logger.info('Génération du certificat auto-signé...');
-  execSync(
-    `openssl req -x509 -nodes -days 3650 -newkey rsa:2048 ` +
-    `-keyout "${KEY_PATH}" -out "${CERT_PATH}" ` +
-    `-subj "/C=XX/ST=Homelab/L=Network/O=NetworkHub/CN=localhost"`,
-    { stdio: 'pipe' }
-  );
+  const attrs = [{ name: 'commonName', value: 'localhost' }];
+  const pems = selfsigned.generate(attrs, { days: 3650, algorithm: 'sha256' });
+  fs.writeFileSync(KEY_PATH, pems.private);
+  fs.writeFileSync(CERT_PATH, pems.cert);
   logger.info('Certificat auto-signé prêt');
 }
 
