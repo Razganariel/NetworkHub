@@ -22,3 +22,7 @@ data.db-wal
 
 # Ressources locales
 locales_resources/
+issues/
+
+# Certificats SSL auto-générés
+certs/

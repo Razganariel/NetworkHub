@@ -1,8 +1,24 @@
 const API = {
-  async get(url) { const r = await fetch(url); if (!r.ok) throw Error(r.statusText); return r.json(); },
-  async post(url, data) { const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); if (!r.ok) { const e = await r.json(); throw Error(e.error); } return r.json(); },
-  async put(url, data) { const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); if (!r.ok) { const e = await r.json(); throw Error(e.error); } return r.json(); },
-  async del(url) { const r = await fetch(url, { method: 'DELETE' }); if (!r.ok) { const e = await r.json(); throw Error(e.error); } return r.json(); },
+  _token: localStorage.getItem('nh-token'),
+  _headers() { const h = { 'Content-Type': 'application/json' }; if (this._token) h['Authorization'] = 'Bearer ' + this._token; return h; },
+  async _fetch(url, opts) {
+    opts = opts || {};
+    const headers = opts.body ? this._headers() : (this._token ? { 'Authorization': 'Bearer ' + this._token } : {});
+    const r = await fetch(url, { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
+    if (r.status === 401) {
+      this._token = null; localStorage.removeItem('nh-token'); showLogin();
+      const e = await r.json().catch(() => ({ error: 'Unauthorized' }));
+      throw Error(e.error);
+    }
+    return r;
+  },
+  async get(url) { const r = await this._fetch(url); if (!r.ok) throw Error(r.statusText); return r.json(); },
+  async post(url, data) { const r = await this._fetch(url, { method: 'POST', body: JSON.stringify(data) }); if (!r.ok) { const e = await r.json(); throw Error(e.error); } return r.json(); },
+  async put(url, data) { const r = await this._fetch(url, { method: 'PUT', body: JSON.stringify(data) }); if (!r.ok) { const e = await r.json(); throw Error(e.error); } return r.json(); },
+  async del(url) { const r = await this._fetch(url, { method: 'DELETE' }); if (!r.ok) { const e = await r.json(); throw Error(e.error); } return r.json(); },
+
+  login(username, password) { return this.post('/api/auth/login', { username, password }); },
+  logout() { return this.post('/api/auth/logout'); },
 
   cards(q) { return this.get('/api/cards' + (q ? '?' + new URLSearchParams(q) : '')); },
   card(id) { return this.get('/api/cards/' + id); },
@@ -46,6 +62,13 @@ const API = {
 
   settings() { return this.get('/api/settings'); },
   updateSetting(key, value) { return this.put('/api/settings', { key, value }); },
+
+  me() { return this.get('/api/users/me'); },
+  updateMe(d) { return this.put('/api/users/me', d); },
+  users() { return this.get('/api/users'); },
+  createUser(d) { return this.post('/api/users', d); },
+  updateUser(id, d) { return this.put('/api/users/' + id, d); },
+  deleteUser(id) { return this.del('/api/users/' + id); },
 };
 
 // ── State ──
@@ -59,12 +82,16 @@ const state = {
   icons: [],
   settings: [],
   health: {},
+  users: [],
+  me: null,
   view: 'dashboard',
   settingsTab: 'cards',
   dashboardTab: localStorage.getItem('nh-dash-tab') || 'grid',
   theme: localStorage.getItem('nh-theme') || 'dark',
   filters: { search: '', categorie_id: '', status: 'all' },
 };
+
+let healthPollTimer = null;
 
 // ── Helpers ──
 function $(sel, ctx) { return (ctx || document).querySelector(sel); }
@@ -76,6 +103,11 @@ function esc(str) {
   const d = document.createElement('div');
   d.textContent = str;
   return d.innerHTML;
+}
+function parseId(val) {
+  if (val === undefined || val === null || val === '') return null;
+  const n = parseInt(val, 10);
+  return isNaN(n) ? null : n;
 }
 
 const COLORBLIND_PALETTES = {
@@ -126,8 +158,7 @@ function readFileAsText(file) {
 
 function buildUrl(prefix, baseUrl, port, mainPage) {
   let url = prefix + baseUrl.replace(/\/+$/, '');
-  const p = String(port);
-  if (p && p !== '80' && p !== '443') url += ':' + p;
+  if (port && port !== '80' && port !== '443') url += ':' + port;
   url += (mainPage || '/');
   return url;
 }
@@ -135,6 +166,7 @@ function buildUrl(prefix, baseUrl, port, mainPage) {
 // ── Navigation ──
 $$('.nav-btn').forEach(btn => {
   btn.addEventListener('click', () => {
+    closeModal();
     $$('.nav-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     $$('.view').forEach(v => v.classList.remove('active'));
@@ -145,7 +177,13 @@ $$('.nav-btn').forEach(btn => {
     if (state.view === 'dashboard') {
       activateDashTab(state.dashboardTab);
       refreshDashboard();
-    } else if (state.view === 'settings') renderSettings();
+    } else if (state.view === 'settings') {
+      renderSettings().catch(err => {
+        console.error('Erreur chargement paramètres:', err);
+        const c = $('#settings-content');
+        if (c) c.innerHTML = '<div class="loading">Erreur de chargement</div>';
+      });
+    }
   });
 });
 
@@ -167,6 +205,88 @@ function toggleTheme() {
   applyTheme(state.theme);
 }
 $$('.theme-toggle').forEach(el => el.addEventListener('click', toggleTheme));
+
+async function sha256(str) {
+  const enc = new TextEncoder();
+  const hash = await crypto.subtle.digest('SHA-256', enc.encode(str));
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ── Auth ──
+async function handleLogin() {
+  const username = $('#login-username').value.trim();
+  const password = await sha256($('#login-password').value);
+  const errEl = $('#login-error');
+  errEl.style.display = 'none';
+  if (!username || !password) { errEl.textContent = 'Veuillez remplir tous les champs'; errEl.style.display = ''; return; }
+  try {
+    const res = await API.login(username, password);
+    API._token = res.token;
+    localStorage.setItem('nh-token', res.token);
+    state.me = res.user;
+    showApp();
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.style.display = '';
+  }
+}
+
+$('#login-btn').addEventListener('click', handleLogin);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && $('#login-page').style.display !== 'none') handleLogin();
+});
+
+$('#btn-logout').addEventListener('click', async () => {
+  try { await API.logout(); } catch {}
+  API._token = null;
+  localStorage.removeItem('nh-token');
+  state.me = null;
+  showLogin();
+});
+
+function showLogin() {
+  closeModal();
+  if (healthPollTimer) { clearInterval(healthPollTimer); healthPollTimer = null; }
+  state.cards = [];
+  state.categories = [];
+  state.machines = [];
+  state.outils = [];
+  state.osList = [];
+  state.fabriquants = [];
+  state.icons = [];
+  state.settings = [];
+  state.health = {};
+  state.users = [];
+  state.me = null;
+  $('#login-page').style.display = 'flex';
+  $('#app-nav').style.display = 'none';
+  $('#app-main').style.display = 'none';
+  $('#login-password').value = '';
+  $('#login-error').style.display = 'none';
+}
+
+function showApp() {
+  $('#login-page').style.display = 'none';
+  $('#app-nav').style.display = '';
+  $('#app-main').style.display = '';
+  state.view = 'dashboard';
+  $$('.nav-btn').forEach(b => b.classList.remove('active'));
+  const dbBtn = $(`.nav-btn[data-view="dashboard"]`);
+  if (dbBtn) dbBtn.classList.add('active');
+  $$('.view').forEach(v => v.classList.remove('active'));
+  const dv = $('#view-dashboard');
+  if (dv) dv.classList.add('active');
+  activateDashTab(state.dashboardTab);
+  refreshDashboard();
+  if (!healthPollTimer) {
+    healthPollTimer = setInterval(async () => {
+      if (state.view === 'dashboard') {
+        await loadHealth();
+        renderCards();
+      }
+    }, 30_000);
+  }
+}
 
 // ── Dashboard tabs ──
 function activateDashTab(tabId) {
@@ -485,8 +605,8 @@ async function openCardModal(card) {
 
   // Auto-fill logic
   function autoFill() {
-    const machineId = parseInt($('#card-machine').value);
-    const outilId = parseInt($('#card-outil').value);
+    const machineId = parseId($('#card-machine').value);
+    const outilId = parseId($('#card-outil').value);
     const machine = state.machines.find(m => m.id === machineId);
     const outil = state.outils.find(o => o.id === outilId);
 
@@ -535,13 +655,13 @@ async function openCardModal(card) {
 
   $('#modal-save').addEventListener('click', async () => {
     const data = {
-      nom: $('#card-nom').value || `${state.machines.find(m => m.id === parseInt($('#card-machine').value))?.nom || ''} - ${state.outils.find(o => o.id === parseInt($('#card-outil').value))?.nom || ''}`,
+      nom: $('#card-nom').value || `${state.machines.find(m => m.id === parseId($('#card-machine').value))?.nom || ''} - ${state.outils.find(o => o.id === parseId($('#card-outil').value))?.nom || ''}`,
       prefix: $('#card-prefix').value,
       base_url: $('#card-baseurl').value,
       url: $('#card-url').value,
-      categorie_id: parseInt($('#card-categorie').value) || null,
-      outil_id: parseInt($('#card-outil').value) || null,
-      machine_id: parseInt($('#card-machine').value) || null,
+      categorie_id: parseId($('#card-categorie').value),
+      outil_id: parseId($('#card-outil').value),
+      machine_id: parseId($('#card-machine').value),
     };
 
     if (!data.machine_id || !data.outil_id) {
@@ -567,9 +687,65 @@ async function openCardModal(card) {
   $('#modal-cancel').addEventListener('click', closeModal);
 }
 
+// ── Profile ──
+async function renderProfile() {
+  if (!state.me) state.me = await API.me();
+  const u = state.me;
+  const c = $('#settings-content');
+
+  c.innerHTML = `
+    <div class="form-group">
+      <label>Nom</label>
+      <input class="input" id="profile-nom" value="${esc(u.nom || '')}">
+    </div>
+    <div class="form-group">
+      <label>Prénom</label>
+      <input class="input" id="profile-prenom" value="${esc(u.prenom || '')}">
+    </div>
+    <div class="form-group">
+      <label>Nom d'utilisateur</label>
+      <input class="input" id="profile-username" value="${esc(u.username)}">
+    </div>
+    <div class="form-group">
+      <label>Email</label>
+      <input class="input" id="profile-email" value="${esc(u.email || '')}" type="email">
+    </div>
+    <div class="form-group">
+      <label>Mot de passe <button class="btn btn-sm" id="profile-change-pwd" style="margin-left:.5rem">Modifier</button></label>
+    </div>
+    <div class="form-group">
+      <label>Rôle</label>
+      <input class="input" value="${esc(u.role)}" readonly style="text-transform:capitalize">
+    </div>
+    <button class="btn btn-primary" id="profile-save">Enregistrer</button>
+    <span id="profile-msg" style="margin-left:.75rem;font-size:.85rem;color:var(--green)"></span>
+  `;
+
+  $('#profile-save').addEventListener('click', async () => {
+    const data = {
+      nom: $('#profile-nom').value,
+      prenom: $('#profile-prenom').value,
+      username: $('#profile-username').value,
+      email: $('#profile-email').value,
+    };
+    if (!data.username) { alert('Le nom d\'utilisateur est requis'); return; }
+    try {
+      state.me = await API.updateMe(data);
+      $('#profile-msg').textContent = 'Profil enregistré.';
+      setTimeout(() => { $('#profile-msg').textContent = ''; }, 3000);
+    } catch (err) {
+      $('#profile-msg').textContent = 'Erreur : ' + err.message;
+      $('#profile-msg').style.color = 'var(--red)';
+    }
+  });
+
+  $('#profile-change-pwd').addEventListener('click', () => openPasswordModal());
+}
+
 // ── Settings ──
 $$('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
+    closeModal();
     $$('.tab-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     state.settingsTab = btn.dataset.tab;
@@ -579,8 +755,20 @@ $$('.tab-btn').forEach(btn => {
 
 async function renderSettings() {
   await loadAllEntities();
+  const isAdmin = state.me && state.me.role === 'admin';
+  const comptesTab = $('#tab-comptes');
+  if (comptesTab) comptesTab.style.display = isAdmin ? '' : 'none';
+  if (!isAdmin && state.settingsTab === 'comptes') {
+    state.settingsTab = 'settings';
+    $$('.tab-btn').forEach(b => b.classList.remove('active'));
+    const st = $(`.tab-btn[data-tab="settings"]`);
+    if (st) st.classList.add('active');
+  }
   renderSettingsTable();
 }
+
+async function loadUsers() { state.users = await API.users(); }
+async function loadMe() { state.me = await API.me(); }
 
 async function loadAllEntities() {
   await Promise.all([
@@ -592,7 +780,11 @@ async function loadAllEntities() {
     loadFabriquants(),
     loadIcons(),
     loadSettings(),
+    loadMe(),
   ]);
+  const isAdmin = state.me && state.me.role === 'admin';
+  if (isAdmin) await loadUsers();
+  else state.users = [];
 }
 
 async function renderSettingsTable() {
@@ -636,7 +828,7 @@ async function renderSettingsTable() {
       fields = ['Nom', 'Couleur'];
       rows = state.categories.map(c => ({
         id: c.id,
-        cells: [c.nom, `<span class="tag" style="background:${c.couleur}22;color:${c.couleur}">${c.couleur}</span>`],
+        cells: [esc(c.nom), `<span class="tag" style="background:${esc(c.couleur)}22;color:${esc(c.couleur)}">${esc(c.couleur)}</span>`],
       }));
       break;
     }
@@ -663,7 +855,7 @@ async function renderSettingsTable() {
       fields = ['Aperçu', 'Nom', 'Fichier', 'Type'];
       rows = state.icons.map(i => ({
         id: i.id,
-        cells: [`<img src="/api/icons/${i.id}/file" style="width:32px;height:32px;border-radius:6px" alt="">`, i.nom, i.filename || '-', i.entity_type || '-'],
+        cells: [`<img src="/api/icons/${i.id}/file" style="width:32px;height:32px;border-radius:6px" alt="">`, esc(i.nom), esc(i.filename || '-'), esc(i.entity_type || '-')],
       }));
       break;
     }
@@ -716,6 +908,74 @@ async function renderSettingsTable() {
           msg.textContent = 'Erreur : ' + err.message;
           msg.style.color = 'var(--red)';
         }
+      });
+      return;
+    }
+    case 'profile': {
+      renderProfile();
+      return;
+    }
+    case 'comptes': {
+      if (!state.me || state.me.role !== 'admin') {
+        state.settingsTab = 'settings';
+        $$('.tab-btn').forEach(b => b.classList.remove('active'));
+        const st = $(`.tab-btn[data-tab="settings"]`);
+        if (st) st.classList.add('active');
+        renderSettingsTable();
+        return;
+      }
+      title = 'Comptes utilisateurs';
+      fields = ['Nom', 'Prénom', 'Nom d\'utilisateur', 'Email', 'Rôle'];
+      rows = state.users.map(u => ({
+        id: u.id,
+        cells: [esc(u.nom || '-'), esc(u.prenom || '-'), esc(u.username), esc(u.email || '-'), `<span class="tag" style="text-transform:capitalize">${esc(u.role)}</span>`],
+        deletable: !state.me || u.id !== state.me.id,
+      }));
+      container.innerHTML = html`
+        <div class="settings-header">
+          <h3>${esc(title)}</h3>
+          <button class="btn btn-primary btn-sm" id="settings-add">+ Ajouter un compte</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>${fields.map(f => `<th>${esc(f)}</th>`).join('')}<th style="width:80px">Actions</th></tr></thead>
+            <tbody>
+              ${rows.length ? rows.map(r => html`
+                <tr>
+                  ${r.cells.map(c => `<td>${c}</td>`).join('')}
+                  <td class="actions">
+                    <button class="btn-icon" data-edit="comptes-${r.id}" title="Modifier">✎</button>
+                    ${r.deletable ? `<button class="btn-icon" data-delete="comptes-${r.id}" title="Supprimer" style="color:var(--red)">✕</button>` : ''}
+                  </td>
+                </tr>
+              `).join('') : '<tr><td colspan="99" style="text-align:center;color:var(--text-muted);padding:2rem">Aucun utilisateur</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      $('#settings-add').addEventListener('click', () => openUserModal());
+
+      container.querySelectorAll('[data-edit]').forEach(el => {
+        el.addEventListener('click', async () => {
+          const id = parseInt(el.dataset.edit.split('-')[1]);
+          const u = state.users.find(x => x.id === id);
+          if (u) openUserModal(u);
+        });
+      });
+
+      container.querySelectorAll('[data-delete]').forEach(el => {
+        el.addEventListener('click', async () => {
+          const id = parseInt(el.dataset.delete.split('-')[1]);
+          if (!confirm('Supprimer définitivement ce compte ?')) return;
+          try {
+            await API.deleteUser(id);
+            await loadAllEntities();
+            renderSettingsTable();
+          } catch (err) {
+            alert('Erreur : ' + err.message);
+          }
+        });
       });
       return;
     }
@@ -799,6 +1059,138 @@ async function renderSettingsTable() {
       if (state.view === 'dashboard') await refreshDashboard();
     });
   });
+}
+
+// ── Password Modal ──
+async function openPasswordModal(forUserId) {
+  const isOwn = !forUserId;
+  $('#modal-title').textContent = isOwn ? 'Changer mon mot de passe' : 'Changer le mot de passe';
+  $('#modal-body').innerHTML = `
+    ${isOwn ? `
+    <div class="form-group">
+      <label>Mot de passe actuel</label>
+      <input class="input" id="pwd-current" type="password" autocomplete="current-password">
+    </div>` : ''}
+    <div class="form-group">
+      <label>Nouveau mot de passe</label>
+      <input class="input" id="pwd-new" type="password" autocomplete="new-password">
+    </div>
+    <div class="form-group">
+      <label>Confirmer le mot de passe</label>
+      <input class="input" id="pwd-confirm" type="password" autocomplete="new-password">
+    </div>
+  `;
+  $('#modal-footer').innerHTML = `
+    <button class="btn" id="modal-cancel">Annuler</button>
+    <button class="btn btn-primary" id="modal-save">Enregistrer</button>
+  `;
+  openModal();
+
+  $('#modal-save').addEventListener('click', async () => {
+    const rawNew = $('#pwd-new').value;
+    const rawConfirm = $('#pwd-confirm').value;
+    if (!rawNew || rawNew !== rawConfirm) { alert('Les mots de passe ne correspondent pas'); return; }
+    const newPwd = await sha256(rawNew);
+    try {
+      if (isOwn) {
+        const rawCur = $('#pwd-current').value;
+        if (!rawCur) { alert('Veuillez saisir votre mot de passe actuel'); return; }
+        const cur = await sha256(rawCur);
+        await API.post('/api/users/change-password', { currentPassword: cur, newPassword: newPwd });
+      } else {
+        await API.updateUser(forUserId, { password: newPwd });
+      }
+      alert('Mot de passe mis à jour.');
+      closeModal();
+    } catch (err) {
+      alert('Erreur : ' + err.message);
+    }
+  });
+
+  $('#modal-cancel').addEventListener('click', closeModal);
+}
+
+// ── User Modal ──
+async function openUserModal(user) {
+  const editMode = !!user;
+
+  $('#modal-title').textContent = editMode ? 'Modifier le compte' : 'Ajouter un compte';
+  $('#modal-body').innerHTML = `
+    <div class="form-group">
+      <label>Nom</label>
+      <input class="input" id="user-nom" value="${esc(user ? user.nom : '')}">
+    </div>
+    <div class="form-group">
+      <label>Prénom</label>
+      <input class="input" id="user-prenom" value="${esc(user ? user.prenom : '')}">
+    </div>
+    <div class="form-group">
+      <label>Nom d'utilisateur</label>
+      <input class="input" id="user-username" value="${esc(user ? user.username : '')}">
+    </div>
+    <div class="form-group">
+      <label>Email</label>
+      <input class="input" id="user-email" value="${esc(user ? (user.email || '') : '')}" type="email">
+    </div>
+    ${editMode ? `
+    <div class="form-group">
+      <label>Mot de passe <button class="btn btn-sm" id="user-change-pwd" style="margin-left:.5rem">Modifier</button></label>
+    </div>` : `
+    <div class="form-group">
+      <label>Mot de passe</label>
+      <input class="input" id="user-password" type="password" placeholder="Mot de passe">
+    </div>`}
+    <div class="form-group">
+      <label>Rôle</label>
+      <select class="input" id="user-role">
+        <option value="user"${user && user.role === 'user' ? ' selected' : ''}>Utilisateur</option>
+        <option value="admin"${user && user.role === 'admin' ? ' selected' : ''}>Administrateur</option>
+      </select>
+    </div>
+  `;
+  $('#modal-footer').innerHTML = `
+    <button class="btn" id="modal-cancel">Annuler</button>
+    <button class="btn btn-primary" id="modal-save">${editMode ? 'Enregistrer' : 'Ajouter'}</button>
+  `;
+  openModal();
+
+  $('#modal-save').addEventListener('click', async () => {
+    const username = $('#user-username').value.trim();
+    const passwordEl = $('#user-password');
+    const rawPassword = passwordEl ? passwordEl.value : '';
+    const email = $('#user-email').value.trim();
+    if (!username) { alert('Le nom d\'utilisateur est requis'); return; }
+    if (!editMode && !rawPassword) { alert('Le mot de passe est requis'); return; }
+
+    const data = {
+      nom: $('#user-nom').value,
+      prenom: $('#user-prenom').value,
+      username,
+      email,
+      role: $('#user-role').value,
+    };
+    if (rawPassword) data.password = await sha256(rawPassword);
+
+    try {
+      if (editMode) {
+        await API.updateUser(user.id, data);
+      } else {
+        await API.createUser(data);
+      }
+      closeModal();
+      await loadAllEntities();
+      renderSettingsTable();
+    } catch (err) {
+      alert('Erreur : ' + err.message);
+    }
+  });
+
+  $('#modal-cancel').addEventListener('click', closeModal);
+
+  const changePwdBtn = document.getElementById('user-change-pwd');
+  if (changePwdBtn) {
+    changePwdBtn.addEventListener('click', () => { closeModal(); openPasswordModal(user.id); });
+  }
 }
 
 // ── Generic Entity Modal ──
@@ -917,8 +1309,8 @@ async function openEntityModal(entityType, label, fieldDefs, item) {
         else continue;
       } else {
         val = el.value;
-        if (el.type === 'number' || f.endsWith('_id')) val = val ? parseInt(val) : null;
-        if (f === 'port') val = val ? parseInt(val) : null;
+        if (el.type === 'number' || f.endsWith('_id')) val = parseId(val);
+        if (f === 'port') val = parseId(val);
       }
       data[f] = val !== '' && val !== null ? val : null;
     }
@@ -1001,15 +1393,19 @@ async function openEntityModal(entityType, label, fieldDefs, item) {
 
 // ── Modal helpers ──
 function openModal() {
-  $('#overlay').classList.add('open');
-  $('#modal').classList.add('open');
-  document.body.style.overflow = 'hidden';
+  try {
+    $('#overlay').classList.add('open');
+    $('#modal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+  } catch {}
 }
 
 function closeModal() {
-  $('#overlay').classList.remove('open');
-  $('#modal').classList.remove('open');
-  document.body.style.overflow = '';
+  try {
+    $('#overlay').classList.remove('open');
+    $('#modal').classList.remove('open');
+    document.body.style.overflow = '';
+  } catch {}
 }
 
 $('#modal-close').addEventListener('click', closeModal);
@@ -1021,12 +1417,18 @@ document.addEventListener('keydown', (e) => {
 
 // ── Init ──
 (async function init() {
-  await loadSettings();
-  await refreshDashboard();
-  setInterval(async () => {
-    if (state.view === 'dashboard') {
-      await loadHealth();
-      renderCards();
+  const token = localStorage.getItem('nh-token');
+  if (token) {
+    API._token = token;
+    try {
+      state.me = await API.me();
+      await loadSettings();
+      await refreshDashboard();
+      showApp();
+    } catch {
+      showLogin();
     }
-  }, 30_000);
+  } else {
+    showLogin();
+  }
 })();
