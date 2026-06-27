@@ -340,6 +340,26 @@ app.delete('/api/users/:id', (req, res) => {
   }
 });
 
+const ALLOWED_COLUMNS = {
+  fabriquants: ['nom', 'modele'],
+  cards: ['nom', 'prefix', 'base_url', 'url', 'categorie_id', 'outil_id', 'machine_id'],
+  categories: ['nom', 'couleur', 'icon_id'],
+  machines: ['nom', 'hostname', 'ip', 'os_id', 'fabriquant_id', 'icon_id'],
+  outils: ['nom', 'categorie_id', 'port', 'main_page', 'icon_id'],
+  os: ['nom', 'version', 'icon_id'],
+  icons: ['nom', 'filename', 'entity_type', 'data'],
+};
+
+const SORTABLE_COLUMNS = {
+  fabriquants: ['id', 'nom', 'modele'],
+  cards: ['id', 'nom', 'prefix', 'base_url', 'url', 'categorie_id', 'outil_id', 'machine_id'],
+  categories: ['id', 'nom', 'couleur'],
+  machines: ['id', 'nom', 'hostname', 'ip'],
+  outils: ['id', 'nom', 'port', 'main_page'],
+  os: ['id', 'nom', 'version'],
+  icons: ['id', 'nom', 'filename', 'entity_type'],
+};
+
 // ── Generic CRUD helpers ──
 function list(table, joins = '') {
   return (req, res) => {
@@ -362,10 +382,23 @@ function list(table, joins = '') {
     }
 
     if (where.length) sql += ' WHERE ' + where.join(' AND ');
-    if (req.query.sort) sql += ` ORDER BY ${req.query.sort}`;
-    else sql += ' ORDER BY nom ASC';
 
-    res.json(db.prepare(sql).all(...params));
+    if (req.query.sort) {
+      const allowed = SORTABLE_COLUMNS[table] || ['nom'];
+      if (!allowed.includes(req.query.sort)) {
+        return res.status(400).json({ error: 'Invalid sort column' });
+      }
+      sql += ` ORDER BY ${req.query.sort}`;
+    } else {
+      sql += ' ORDER BY nom ASC';
+    }
+
+    try {
+      res.json(db.prepare(sql).all(...params));
+    } catch (err) {
+      logger.error(`${table} :: list error:`, err.message);
+      res.status(400).json({ error: err.message });
+    }
   };
 }
 
@@ -381,7 +414,9 @@ function getById(table) {
 function create(table) {
   return (req, res) => {
     const db = getDb();
-    const cols = Object.keys(req.body);
+    const allowed = ALLOWED_COLUMNS[table] || [];
+    const cols = Object.keys(req.body).filter(k => allowed.includes(k));
+    if (!cols.length) return res.status(400).json({ error: 'No valid fields' });
     const vals = cols.map((c) => req.body[c]);
     const placeholders = cols.map(() => '?').join(',');
     try {
@@ -400,7 +435,9 @@ function create(table) {
 function update(table) {
   return (req, res) => {
     const db = getDb();
-    const cols = Object.keys(req.body);
+    const allowed = ALLOWED_COLUMNS[table] || [];
+    const cols = Object.keys(req.body).filter(k => allowed.includes(k));
+    if (!cols.length) return res.status(400).json({ error: 'No valid fields' });
     const vals = cols.map((c) => req.body[c]);
     const set = cols.map((c) => `${c} = ?`).join(',');
     try {
