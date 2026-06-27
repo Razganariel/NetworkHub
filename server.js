@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import dotenv from 'dotenv';
 import express from 'express';
 import path from 'path';
@@ -11,6 +10,7 @@ import { execSync } from 'child_process';
 import { getDb, getSetting, hashPassword, verifyPassword } from './db.js';
 import * as logger from './logger.js';
 
+dotenv.config();
 if (process.env.NODE_ENV === 'development') {
   dotenv.config({ path: '.env.dev', override: true });
 }
