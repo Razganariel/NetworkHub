@@ -178,7 +178,11 @@ $$('.nav-btn').forEach(btn => {
       activateDashTab(state.dashboardTab);
       refreshDashboard();
     } else if (state.view === 'settings') {
-      renderSettings();
+      renderSettings().catch(err => {
+        console.error('Erreur chargement paramètres:', err);
+        const c = $('#settings-content');
+        if (c) c.innerHTML = '<div class="loading">Erreur de chargement</div>';
+      });
     }
   });
 });
@@ -243,6 +247,17 @@ $('#btn-logout').addEventListener('click', async () => {
 function showLogin() {
   closeModal();
   if (healthPollTimer) { clearInterval(healthPollTimer); healthPollTimer = null; }
+  state.cards = [];
+  state.categories = [];
+  state.machines = [];
+  state.outils = [];
+  state.osList = [];
+  state.fabriquants = [];
+  state.icons = [];
+  state.settings = [];
+  state.health = {};
+  state.users = [];
+  state.me = null;
   $('#login-page').style.display = 'flex';
   $('#app-nav').style.display = 'none';
   $('#app-main').style.display = 'none';
@@ -765,9 +780,11 @@ async function loadAllEntities() {
     loadFabriquants(),
     loadIcons(),
     loadSettings(),
-    loadUsers(),
     loadMe(),
   ]);
+  const isAdmin = state.me && state.me.role === 'admin';
+  if (isAdmin) await loadUsers();
+  else state.users = [];
 }
 
 async function renderSettingsTable() {
@@ -899,6 +916,14 @@ async function renderSettingsTable() {
       return;
     }
     case 'comptes': {
+      if (!state.me || state.me.role !== 'admin') {
+        state.settingsTab = 'settings';
+        $$('.tab-btn').forEach(b => b.classList.remove('active'));
+        const st = $(`.tab-btn[data-tab="settings"]`);
+        if (st) st.classList.add('active');
+        renderSettingsTable();
+        return;
+      }
       title = 'Comptes utilisateurs';
       fields = ['Nom', 'Prénom', 'Nom d\'utilisateur', 'Email', 'Rôle'];
       rows = state.users.map(u => ({
