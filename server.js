@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import dotenv from 'dotenv';
 import express from 'express';
 import path from 'path';
@@ -7,10 +6,10 @@ import https from 'https';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import fs from 'fs';
-import { execSync } from 'child_process';
 import { getDb, getSetting, hashPassword, verifyPassword } from './db.js';
 import * as logger from './logger.js';
 
+dotenv.config();
 if (process.env.NODE_ENV === 'development') {
   dotenv.config({ path: '.env.dev', override: true });
 }
@@ -21,6 +20,38 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ── Rate limiter global ──
+const rateLimitMap = new Map();
+const RATE_LIMIT_MAX = 30;
+const RATE_LIMIT_WINDOW = 1000;
+
+function rateLimiter(req, res, next) {
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  const now = Date.now();
+  if (!rateLimitMap.has(ip)) {
+    rateLimitMap.set(ip, []);
+  }
+  const timestamps = rateLimitMap.get(ip).filter(t => now - t < RATE_LIMIT_WINDOW);
+  if (timestamps.length >= RATE_LIMIT_MAX) {
+    return res.status(429).json({ error: 'Too many requests' });
+  }
+  timestamps.push(now);
+  rateLimitMap.set(ip, timestamps);
+  next();
+}
+
+app.use('/api', rateLimiter);
+
+// Nettoyage périodique du rate limiter
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, timestamps] of rateLimitMap) {
+    const valid = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW);
+    if (valid.length) rateLimitMap.set(ip, valid);
+    else rateLimitMap.delete(ip);
+  }
+}, 60 * 1000);
 
 // ── Init debug mode from DB ──
 function initDebugMode() {
@@ -48,6 +79,11 @@ app.use((req, res, next) => {
 
 // ── Auth ──
 const sessions = new Map();
+const SESSION_TTL = 24 * 60 * 60 * 1000;
+
+const loginAttempts = new Map();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_BLOCK_DURATION = 15 * 60 * 1000;
 
 function authMiddleware(req, res, next) {
   if (req.originalUrl === '/api/auth/login') return next();
@@ -61,6 +97,12 @@ function authMiddleware(req, res, next) {
   if (!session) {
     return res.status(401).json({ error: 'Invalid token' });
   }
+  if (Date.now() - session.createdAt > SESSION_TTL) {
+    sessions.delete(token);
+    return res.status(401).json({ error: 'Token expired' });
+  }
+  session.createdAt = Date.now();
+  sessions.set(token, session);
   req.user = session;
   next();
 }
@@ -70,13 +112,30 @@ app.use('/api', authMiddleware);
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'username and password are required' });
+
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  const lockKey = `login:${username}:${ip}`;
+  const attempt = loginAttempts.get(lockKey);
+  if (attempt && attempt.count >= MAX_LOGIN_ATTEMPTS) {
+    if (Date.now() - attempt.firstAttempt < LOGIN_BLOCK_DURATION) {
+      return res.status(429).json({ error: 'Trop de tentatives. Réessayez dans 15 minutes.' });
+    }
+    loginAttempts.delete(lockKey);
+  }
+
   const db = getDb();
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || !verifyPassword(password, user.password)) {
+    if (!loginAttempts.has(lockKey)) {
+      loginAttempts.set(lockKey, { count: 0, firstAttempt: Date.now() });
+    }
+    loginAttempts.get(lockKey).count++;
     return res.status(401).json({ error: 'Identifiants invalides' });
   }
+
+  loginAttempts.delete(lockKey);
   const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { id: user.id, nom: user.nom, prenom: user.prenom, username: user.username, email: user.email || '', role: user.role });
+  sessions.set(token, { id: user.id, nom: user.nom, prenom: user.prenom, username: user.username, email: user.email || '', role: user.role, createdAt: Date.now() });
   logger.info(`Connexion : ${username}`);
   if (!healthTimer) startHealthLoop();
   res.json({ token, user: { id: user.id, nom: user.nom, prenom: user.prenom, username: user.username, email: user.email || '', role: user.role } });
@@ -89,6 +148,21 @@ app.post('/api/auth/logout', (req, res) => {
   }
   res.json({ ok: true });
 });
+
+// Nettoyage périodique des sessions et tentatives de login expirées
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, session] of sessions) {
+    if (now - session.createdAt > SESSION_TTL) {
+      sessions.delete(token);
+    }
+  }
+  for (const [key, data] of loginAttempts) {
+    if (now - data.firstAttempt > LOGIN_BLOCK_DURATION) {
+      loginAttempts.delete(key);
+    }
+  }
+}, 60 * 60 * 1000);
 
 // ── Health cache (TTL and timeout from DB settings, fallback env / defaults) ──
 const healthCache = { data: null, ts: 0 };
@@ -281,11 +355,18 @@ app.post('/api/users/change-password', (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/users', (req, res) => {
+function requireAdmin(req, res, next) {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+}
+
+app.get('/api/users', requireAdmin, (req, res) => {
   res.json(getDb().prepare('SELECT id, nom, prenom, username, email, role FROM users ORDER BY username ASC').all());
 });
 
-app.post('/api/users', (req, res) => {
+app.post('/api/users', requireAdmin, (req, res) => {
   const db = getDb();
   const { nom, prenom, username, email, password, role } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'username and password are required' });
@@ -301,7 +382,7 @@ app.post('/api/users', (req, res) => {
   }
 });
 
-app.put('/api/users/:id', (req, res) => {
+app.put('/api/users/:id', requireAdmin, (req, res) => {
   const db = getDb();
   const { nom, prenom, username, email, password, role } = req.body;
   try {
@@ -325,7 +406,7 @@ app.put('/api/users/:id', (req, res) => {
   }
 });
 
-app.delete('/api/users/:id', (req, res) => {
+app.delete('/api/users/:id', requireAdmin, (req, res) => {
   const db = getDb();
   if (req.user && req.user.id === parseInt(req.params.id)) {
     return res.status(400).json({ error: 'Cannot delete your own account' });
@@ -339,6 +420,26 @@ app.delete('/api/users/:id', (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
+
+const ALLOWED_COLUMNS = {
+  fabriquants: ['nom', 'modele'],
+  cards: ['nom', 'prefix', 'base_url', 'url', 'categorie_id', 'outil_id', 'machine_id'],
+  categories: ['nom', 'couleur', 'icon_id'],
+  machines: ['nom', 'hostname', 'ip', 'os_id', 'fabriquant_id', 'icon_id'],
+  outils: ['nom', 'categorie_id', 'port', 'main_page', 'icon_id'],
+  os: ['nom', 'version', 'icon_id'],
+  icons: ['nom', 'filename', 'entity_type', 'data'],
+};
+
+const SORTABLE_COLUMNS = {
+  fabriquants: ['id', 'nom', 'modele'],
+  cards: ['id', 'nom', 'prefix', 'base_url', 'url', 'categorie_id', 'outil_id', 'machine_id'],
+  categories: ['id', 'nom', 'couleur'],
+  machines: ['id', 'nom', 'hostname', 'ip'],
+  outils: ['id', 'nom', 'port', 'main_page'],
+  os: ['id', 'nom', 'version'],
+  icons: ['id', 'nom', 'filename', 'entity_type'],
+};
 
 // ── Generic CRUD helpers ──
 function list(table, joins = '') {
@@ -362,10 +463,23 @@ function list(table, joins = '') {
     }
 
     if (where.length) sql += ' WHERE ' + where.join(' AND ');
-    if (req.query.sort) sql += ` ORDER BY ${req.query.sort}`;
-    else sql += ' ORDER BY nom ASC';
 
-    res.json(db.prepare(sql).all(...params));
+    if (req.query.sort) {
+      const allowed = SORTABLE_COLUMNS[table] || ['nom'];
+      if (!allowed.includes(req.query.sort)) {
+        return res.status(400).json({ error: 'Invalid sort column' });
+      }
+      sql += ` ORDER BY ${req.query.sort}`;
+    } else {
+      sql += ' ORDER BY nom ASC';
+    }
+
+    try {
+      res.json(db.prepare(sql).all(...params));
+    } catch (err) {
+      logger.error(`${table} :: list error:`, err.message);
+      res.status(400).json({ error: err.message });
+    }
   };
 }
 
@@ -381,7 +495,14 @@ function getById(table) {
 function create(table) {
   return (req, res) => {
     const db = getDb();
-    const cols = Object.keys(req.body);
+    const allowed = ALLOWED_COLUMNS[table] || [];
+    const cols = Object.keys(req.body).filter(k => allowed.includes(k));
+    if (!cols.length) return res.status(400).json({ error: 'No valid fields' });
+
+    if (table === 'categories' && req.body.couleur && !/^#[0-9a-fA-F]{6}$/.test(req.body.couleur)) {
+      return res.status(400).json({ error: 'Invalid color format' });
+    }
+
     const vals = cols.map((c) => req.body[c]);
     const placeholders = cols.map(() => '?').join(',');
     try {
@@ -400,7 +521,14 @@ function create(table) {
 function update(table) {
   return (req, res) => {
     const db = getDb();
-    const cols = Object.keys(req.body);
+    const allowed = ALLOWED_COLUMNS[table] || [];
+    const cols = Object.keys(req.body).filter(k => allowed.includes(k));
+    if (!cols.length) return res.status(400).json({ error: 'No valid fields' });
+
+    if (table === 'categories' && req.body.couleur && !/^#[0-9a-fA-F]{6}$/.test(req.body.couleur)) {
+      return res.status(400).json({ error: 'Invalid color format' });
+    }
+
     const vals = cols.map((c) => req.body[c]);
     const set = cols.map((c) => `${c} = ?`).join(',');
     try {
@@ -630,6 +758,7 @@ app.get('*', (_req, res) => {
 });
 
 // ── HTTPS with auto-generated self-signed cert ──
+import selfsigned from 'selfsigned';
 const CERTS_DIR = path.join(__dirname, 'certs');
 const KEY_PATH = path.join(CERTS_DIR, 'key.pem');
 const CERT_PATH = path.join(CERTS_DIR, 'cert.pem');
@@ -638,12 +767,10 @@ function ensureCerts() {
   if (fs.existsSync(KEY_PATH) && fs.existsSync(CERT_PATH)) return;
   fs.mkdirSync(CERTS_DIR, { recursive: true });
   logger.info('Génération du certificat auto-signé...');
-  execSync(
-    `openssl req -x509 -nodes -days 3650 -newkey rsa:2048 ` +
-    `-keyout "${KEY_PATH}" -out "${CERT_PATH}" ` +
-    `-subj "/C=XX/ST=Homelab/L=Network/O=NetworkHub/CN=localhost"`,
-    { stdio: 'pipe' }
-  );
+  const attrs = [{ name: 'commonName', value: 'localhost' }];
+  const pems = selfsigned.generate(attrs, { days: 3650, algorithm: 'sha256' });
+  fs.writeFileSync(KEY_PATH, pems.private);
+  fs.writeFileSync(CERT_PATH, pems.cert);
   logger.info('Certificat auto-signé prêt');
 }
 

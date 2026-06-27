@@ -104,6 +104,11 @@ function esc(str) {
   d.textContent = str;
   return d.innerHTML;
 }
+function parseId(val) {
+  if (val === undefined || val === null || val === '') return null;
+  const n = parseInt(val, 10);
+  return isNaN(n) ? null : n;
+}
 
 const COLORBLIND_PALETTES = {
   normal: {
@@ -153,8 +158,7 @@ function readFileAsText(file) {
 
 function buildUrl(prefix, baseUrl, port, mainPage) {
   let url = prefix + baseUrl.replace(/\/+$/, '');
-  const p = String(port);
-  if (p && p !== '80' && p !== '443') url += ':' + p;
+  if (port && port !== '80' && port !== '443') url += ':' + port;
   url += (mainPage || '/');
   return url;
 }
@@ -224,10 +228,8 @@ async function handleLogin() {
 }
 
 $('#login-btn').addEventListener('click', handleLogin);
-['keydown'].forEach(ev => {
-  document.addEventListener(ev, e => {
-    if (e.key === 'Enter' && $('#login-page').style.display !== 'none') handleLogin();
-  });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && $('#login-page').style.display !== 'none') handleLogin();
 });
 
 $('#btn-logout').addEventListener('click', async () => {
@@ -588,8 +590,8 @@ async function openCardModal(card) {
 
   // Auto-fill logic
   function autoFill() {
-    const machineId = parseInt($('#card-machine').value);
-    const outilId = parseInt($('#card-outil').value);
+    const machineId = parseId($('#card-machine').value);
+    const outilId = parseId($('#card-outil').value);
     const machine = state.machines.find(m => m.id === machineId);
     const outil = state.outils.find(o => o.id === outilId);
 
@@ -638,13 +640,13 @@ async function openCardModal(card) {
 
   $('#modal-save').addEventListener('click', async () => {
     const data = {
-      nom: $('#card-nom').value || `${state.machines.find(m => m.id === parseInt($('#card-machine').value))?.nom || ''} - ${state.outils.find(o => o.id === parseInt($('#card-outil').value))?.nom || ''}`,
+      nom: $('#card-nom').value || `${state.machines.find(m => m.id === parseId($('#card-machine').value))?.nom || ''} - ${state.outils.find(o => o.id === parseId($('#card-outil').value))?.nom || ''}`,
       prefix: $('#card-prefix').value,
       base_url: $('#card-baseurl').value,
       url: $('#card-url').value,
-      categorie_id: parseInt($('#card-categorie').value) || null,
-      outil_id: parseInt($('#card-outil').value) || null,
-      machine_id: parseInt($('#card-machine').value) || null,
+      categorie_id: parseId($('#card-categorie').value),
+      outil_id: parseId($('#card-outil').value),
+      machine_id: parseId($('#card-machine').value),
     };
 
     if (!data.machine_id || !data.outil_id) {
@@ -809,7 +811,7 @@ async function renderSettingsTable() {
       fields = ['Nom', 'Couleur'];
       rows = state.categories.map(c => ({
         id: c.id,
-        cells: [c.nom, `<span class="tag" style="background:${c.couleur}22;color:${c.couleur}">${c.couleur}</span>`],
+        cells: [esc(c.nom), `<span class="tag" style="background:${esc(c.couleur)}22;color:${esc(c.couleur)}">${esc(c.couleur)}</span>`],
       }));
       break;
     }
@@ -836,7 +838,7 @@ async function renderSettingsTable() {
       fields = ['Aperçu', 'Nom', 'Fichier', 'Type'];
       rows = state.icons.map(i => ({
         id: i.id,
-        cells: [`<img src="/api/icons/${i.id}/file" style="width:32px;height:32px;border-radius:6px" alt="">`, i.nom, i.filename || '-', i.entity_type || '-'],
+        cells: [`<img src="/api/icons/${i.id}/file" style="width:32px;height:32px;border-radius:6px" alt="">`, esc(i.nom), esc(i.filename || '-'), esc(i.entity_type || '-')],
       }));
       break;
     }
@@ -901,7 +903,7 @@ async function renderSettingsTable() {
       fields = ['Nom', 'Prénom', 'Nom d\'utilisateur', 'Email', 'Rôle'];
       rows = state.users.map(u => ({
         id: u.id,
-        cells: [u.nom || '-', u.prenom || '-', u.username, u.email || '-', `<span class="tag" style="text-transform:capitalize">${esc(u.role)}</span>`],
+        cells: [esc(u.nom || '-'), esc(u.prenom || '-'), esc(u.username), esc(u.email || '-'), `<span class="tag" style="text-transform:capitalize">${esc(u.role)}</span>`],
         deletable: !state.me || u.id !== state.me.id,
       }));
       container.innerHTML = html`
@@ -1282,8 +1284,8 @@ async function openEntityModal(entityType, label, fieldDefs, item) {
         else continue;
       } else {
         val = el.value;
-        if (el.type === 'number' || f.endsWith('_id')) val = val ? parseInt(val) : null;
-        if (f === 'port') val = val ? parseInt(val) : null;
+        if (el.type === 'number' || f.endsWith('_id')) val = parseId(val);
+        if (f === 'port') val = parseId(val);
       }
       data[f] = val !== '' && val !== null ? val : null;
     }
