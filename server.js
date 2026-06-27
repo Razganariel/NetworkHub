@@ -417,6 +417,11 @@ function create(table) {
     const allowed = ALLOWED_COLUMNS[table] || [];
     const cols = Object.keys(req.body).filter(k => allowed.includes(k));
     if (!cols.length) return res.status(400).json({ error: 'No valid fields' });
+
+    if (table === 'categories' && req.body.couleur && !/^#[0-9a-fA-F]{6}$/.test(req.body.couleur)) {
+      return res.status(400).json({ error: 'Invalid color format' });
+    }
+
     const vals = cols.map((c) => req.body[c]);
     const placeholders = cols.map(() => '?').join(',');
     try {
@@ -438,6 +443,11 @@ function update(table) {
     const allowed = ALLOWED_COLUMNS[table] || [];
     const cols = Object.keys(req.body).filter(k => allowed.includes(k));
     if (!cols.length) return res.status(400).json({ error: 'No valid fields' });
+
+    if (table === 'categories' && req.body.couleur && !/^#[0-9a-fA-F]{6}$/.test(req.body.couleur)) {
+      return res.status(400).json({ error: 'Invalid color format' });
+    }
+
     const vals = cols.map((c) => req.body[c]);
     const set = cols.map((c) => `${c} = ?`).join(',');
     try {

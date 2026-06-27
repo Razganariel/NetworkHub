@@ -809,7 +809,7 @@ async function renderSettingsTable() {
       fields = ['Nom', 'Couleur'];
       rows = state.categories.map(c => ({
         id: c.id,
-        cells: [c.nom, `<span class="tag" style="background:${c.couleur}22;color:${c.couleur}">${c.couleur}</span>`],
+        cells: [esc(c.nom), `<span class="tag" style="background:${esc(c.couleur)}22;color:${esc(c.couleur)}">${esc(c.couleur)}</span>`],
       }));
       break;
     }
@@ -836,7 +836,7 @@ async function renderSettingsTable() {
       fields = ['Aperçu', 'Nom', 'Fichier', 'Type'];
       rows = state.icons.map(i => ({
         id: i.id,
-        cells: [`<img src="/api/icons/${i.id}/file" style="width:32px;height:32px;border-radius:6px" alt="">`, i.nom, i.filename || '-', i.entity_type || '-'],
+        cells: [`<img src="/api/icons/${i.id}/file" style="width:32px;height:32px;border-radius:6px" alt="">`, esc(i.nom), esc(i.filename || '-'), esc(i.entity_type || '-')],
       }));
       break;
     }
