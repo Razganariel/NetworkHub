@@ -104,6 +104,11 @@ function esc(str) {
   d.textContent = str;
   return d.innerHTML;
 }
+function parseId(val) {
+  if (val === undefined || val === null || val === '') return null;
+  const n = parseInt(val, 10);
+  return isNaN(n) ? null : n;
+}
 
 const COLORBLIND_PALETTES = {
   normal: {
@@ -153,8 +158,7 @@ function readFileAsText(file) {
 
 function buildUrl(prefix, baseUrl, port, mainPage) {
   let url = prefix + baseUrl.replace(/\/+$/, '');
-  const p = String(port);
-  if (p && p !== '80' && p !== '443') url += ':' + p;
+  if (port && port !== '80' && port !== '443') url += ':' + port;
   url += (mainPage || '/');
   return url;
 }
@@ -588,8 +592,8 @@ async function openCardModal(card) {
 
   // Auto-fill logic
   function autoFill() {
-    const machineId = parseInt($('#card-machine').value);
-    const outilId = parseInt($('#card-outil').value);
+    const machineId = parseId($('#card-machine').value);
+    const outilId = parseId($('#card-outil').value);
     const machine = state.machines.find(m => m.id === machineId);
     const outil = state.outils.find(o => o.id === outilId);
 
@@ -638,13 +642,13 @@ async function openCardModal(card) {
 
   $('#modal-save').addEventListener('click', async () => {
     const data = {
-      nom: $('#card-nom').value || `${state.machines.find(m => m.id === parseInt($('#card-machine').value))?.nom || ''} - ${state.outils.find(o => o.id === parseInt($('#card-outil').value))?.nom || ''}`,
+      nom: $('#card-nom').value || `${state.machines.find(m => m.id === parseId($('#card-machine').value))?.nom || ''} - ${state.outils.find(o => o.id === parseId($('#card-outil').value))?.nom || ''}`,
       prefix: $('#card-prefix').value,
       base_url: $('#card-baseurl').value,
       url: $('#card-url').value,
-      categorie_id: parseInt($('#card-categorie').value) || null,
-      outil_id: parseInt($('#card-outil').value) || null,
-      machine_id: parseInt($('#card-machine').value) || null,
+      categorie_id: parseId($('#card-categorie').value),
+      outil_id: parseId($('#card-outil').value),
+      machine_id: parseId($('#card-machine').value),
     };
 
     if (!data.machine_id || !data.outil_id) {
@@ -1282,8 +1286,8 @@ async function openEntityModal(entityType, label, fieldDefs, item) {
         else continue;
       } else {
         val = el.value;
-        if (el.type === 'number' || f.endsWith('_id')) val = val ? parseInt(val) : null;
-        if (f === 'port') val = val ? parseInt(val) : null;
+        if (el.type === 'number' || f.endsWith('_id')) val = parseId(val);
+        if (f === 'port') val = parseId(val);
       }
       data[f] = val !== '' && val !== null ? val : null;
     }
