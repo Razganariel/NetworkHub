@@ -379,7 +379,8 @@ app.post('/api/users', requireAdmin, (req, res) => {
   const db = getDb();
   const { nom, prenom, username, email, password, role } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'username and password are required' });
-  if (email && !validateEmail(email)) return res.status(400).json({ error: 'Invalid email format' });
+  if (!email) return res.status(400).json({ error: 'email is required' });
+  if (!validateEmail(email)) return res.status(400).json({ error: 'Invalid email format' });
   try {
     const stmt = db.prepare('INSERT INTO users (nom, prenom, username, email, password, role) VALUES (?, ?, ?, ?, ?, ?)');
     const result = stmt.run(nom || '', prenom || '', username, email || '', hashPassword(password), role || 'user');

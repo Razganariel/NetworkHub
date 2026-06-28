@@ -781,7 +781,11 @@ async function renderProfile() {
     const errUsername = $('#profile-username-error');
     const errEmail = $('#profile-email-error');
     [errUsername, errEmail].forEach(el => { if (el) el.textContent = ''; });
-    if (!username) { if (errUsername) errUsername.textContent = 'Nom d\'utilisateur requis'; else showToast('Le nom d\'utilisateur est requis', 'error'); return; }
+
+    let hasError = false;
+    if (!username) { if (errUsername) { errUsername.textContent = 'Nom d\'utilisateur requis'; hasError = true; } }
+    if (!email) { if (errEmail) { errEmail.textContent = 'Email requis'; hasError = true; } }
+    if (hasError) return;
 
     try {
       state.me = await API.updateMe(data);
@@ -1232,8 +1236,11 @@ async function openUserModal(user) {
     const errEmail = $('#user-email-error');
     [errUsername, errPassword, errEmail].forEach(el => { if (el) el.textContent = ''; });
 
-    if (!username) { if (errUsername) errUsername.textContent = 'Nom d\'utilisateur requis'; else showToast('Le nom d\'utilisateur est requis', 'error'); return; }
-    if (!editMode && !rawPassword) { if (errPassword) errPassword.textContent = 'Mot de passe requis'; else showToast('Le mot de passe est requis', 'error'); return; }
+    let hasError = false;
+    if (!username) { if (errUsername) { errUsername.textContent = 'Nom d\'utilisateur requis'; hasError = true; } }
+    if (!editMode && !rawPassword) { if (errPassword) { errPassword.textContent = 'Mot de passe requis'; hasError = true; } }
+    if (!email) { if (errEmail) { errEmail.textContent = 'Email requis'; hasError = true; } }
+    if (hasError) return;
 
     const data = {
       nom: $('#user-nom').value,
