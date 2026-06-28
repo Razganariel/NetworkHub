@@ -113,6 +113,38 @@ function authMiddleware(req, res, next) {
   next();
 }
 
+// ── Setup (first-run) ──
+app.get('/api/setup/status', (req, res) => {
+  const db = getDb();
+  const count = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
+  res.json({ setupNeeded: count === 0 });
+});
+
+app.post('/api/setup/register', (req, res) => {
+  const db = getDb();
+  const count = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
+  if (count > 0) return res.status(403).json({ error: 'Setup already completed' });
+
+  const { nom, prenom, username, email, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'username and password are required' });
+  if (!email) return res.status(400).json({ error: 'email is required' });
+  if (!validateEmail(email)) return res.status(400).json({ error: 'Invalid email format' });
+
+  try {
+    const stmt = db.prepare('INSERT INTO users (nom, prenom, username, email, password, role) VALUES (?, ?, ?, ?, ?, ?)');
+    stmt.run(nom || '', prenom || '', username, email, hashPassword(password), 'admin');
+    const user = db.prepare('SELECT id, nom, prenom, username, email, role FROM users WHERE username = ?').get(username);
+    const token = crypto.randomBytes(32).toString('hex');
+    sessions.set(token, { id: user.id, nom: user.nom, prenom: user.prenom, username: user.username, email: user.email || '', role: user.role, createdAt: Date.now() });
+    logger.info(`Premier utilisateur créé : ${username}`);
+    if (!healthTimer) startHealthLoop();
+    res.status(201).json({ token, user: { id: user.id, nom: user.nom, prenom: user.prenom, username: user.username, email: user.email || '', role: user.role } });
+  } catch (err) {
+    logger.error(`Erreur création premier utilisateur ${username}:`, err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.use('/api', authMiddleware);
 
 app.post('/api/auth/login', (req, res) => {
@@ -436,7 +468,7 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
 });
 
 const ALLOWED_COLUMNS = {
-  fabriquants: ['nom', 'modele'],
+  fabriquants: ['nom', 'modele', 'icon_id'],
   cards: ['nom', 'prefix', 'base_url', 'url', 'port', 'main_page', 'categorie_id', 'outil_id', 'machine_id'],
   categories: ['nom', 'couleur', 'icon_id'],
   machines: ['nom', 'hostname', 'ip', 'os_id', 'fabriquant_id', 'icon_id'],
@@ -446,7 +478,7 @@ const ALLOWED_COLUMNS = {
 };
 
 const SORTABLE_COLUMNS = {
-  fabriquants: ['id', 'nom', 'modele'],
+  fabriquants: ['id', 'nom', 'modele', 'icon_id'],
   cards: ['id', 'nom', 'prefix', 'base_url', 'url', 'port', 'main_page', 'categorie_id', 'outil_id', 'machine_id'],
   categories: ['id', 'nom', 'couleur'],
   machines: ['id', 'nom', 'hostname', 'ip'],

@@ -346,6 +346,11 @@ select.input option{background:var(--bg-card);color:var(--text)}
 .toggle input:checked+.toggle-slider::before{background:#fff;transform:translateX(20px)}
 .form-field-error{border-color:var(--red)!important}
 .auto-fill{color:var(--orange);font-size:.75rem;font-style:italic}
+#setup-form .form-group{margin-bottom:.55rem}
+#setup-form .password-strength{margin-top:.2rem}
+#setup-form .strength-label{min-height:0}
+#setup-form .form-error{min-height:0}
+#setup-form p{margin-bottom:.7rem}
 
 /* ── SETTINGS ── */
 .settings-tabs{
