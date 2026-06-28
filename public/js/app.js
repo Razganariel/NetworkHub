@@ -104,6 +104,53 @@ function esc(str) {
   d.textContent = str;
   return d.innerHTML;
 }
+function passwordEntropy(pwd) {
+  if (!pwd) return 0;
+  let pool = 0;
+  if (/[a-z]/.test(pwd)) pool += 26;
+  if (/[A-Z]/.test(pwd)) pool += 26;
+  if (/\d/.test(pwd)) pool += 10;
+  if (/[^a-zA-Z0-9]/.test(pwd)) pool += 33;
+  return Math.round(pwd.length * (pool ? Math.log2(pool) : 0));
+}
+const STRENGTH_THRESHOLDS = [
+  { min: 0, label: 'Très faible', class: 'very-weak' },
+  { min: 30, label: 'Faible', class: 'weak' },
+  { min: 50, label: 'Correct', class: 'fair' },
+  { min: 60, label: 'Fort', class: 'strong' },
+  { min: 80, label: 'Très fort', class: 'very-strong' },
+];
+function getStrengthLevel(entropy) {
+  for (let i = STRENGTH_THRESHOLDS.length - 1; i >= 0; i--) {
+    if (entropy >= STRENGTH_THRESHOLDS[i].min) return STRENGTH_THRESHOLDS[i];
+  }
+  return STRENGTH_THRESHOLDS[0];
+}
+function setupPasswordStrength(inputId, fillId, labelId) {
+  const input = document.getElementById(inputId);
+  const fill = document.getElementById(fillId);
+  const label = document.getElementById(labelId);
+  if (!input || !fill || !label) return;
+  input.addEventListener('input', () => {
+    const e = passwordEntropy(input.value);
+    const level = getStrengthLevel(e);
+    fill.style.width = Math.min(100, (e / 100) * 100) + '%';
+    fill.className = 'strength-fill ' + level.class;
+    label.textContent = level.label + ' (' + e + ' bits)';
+  });
+}
+function setupPasswordMatch(inputId, confirmId, errorId) {
+  const input = document.getElementById(inputId);
+  const confirm = document.getElementById(confirmId);
+  const errEl = document.getElementById(errorId);
+  if (!input || !confirm || !errEl) return;
+  const check = () => {
+    if (!confirm.value) { errEl.textContent = ''; return; }
+    errEl.textContent = input.value !== confirm.value ? 'Les mots de passe ne correspondent pas' : '';
+  };
+  input.addEventListener('input', check);
+  confirm.addEventListener('input', check);
+}
 function parseId(val) {
   if (val === undefined || val === null || val === '') return null;
   const n = parseInt(val, 10);
@@ -114,8 +161,14 @@ function setupPasswordToggle(id) {
   const input = document.getElementById(id);
   if (!input) return;
   const wrapper = input.parentElement;
-  const btn = wrapper.querySelector('.btn-eye');
-  if (btn) return;
+  const existing = wrapper.querySelector('.btn-eye');
+  if (existing) return;
+
+  const pwWrap = document.createElement('div');
+  pwWrap.style.cssText = 'position:relative;display:flex;align-items:center';
+  input.parentElement.insertBefore(pwWrap, input);
+  pwWrap.appendChild(input);
+
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'btn-eye';
@@ -130,10 +183,9 @@ function setupPasswordToggle(id) {
       : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
     toggle.setAttribute('aria-label', isPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
   });
-  wrapper.style.position = 'relative';
   input.style.paddingRight = '2.3rem';
   toggle.style.cssText = 'position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-muted);padding:4px;display:flex;z-index:1';
-  wrapper.appendChild(toggle);
+  pwWrap.appendChild(toggle);
 }
 
 const ENTITY_TYPE_MAP = {
@@ -1168,6 +1220,8 @@ async function openPasswordModal(forUserId) {
     <div class="form-group">
       <label>Nouveau mot de passe</label>
       <input class="input" id="pwd-new" type="password" autocomplete="new-password">
+      <div class="password-strength"><div class="strength-fill" id="pwd-new-fill"></div></div>
+      <div class="strength-label" id="pwd-new-label"></div>
       <div class="form-error" id="pwd-new-error"></div>
     </div>
     <div class="form-group">
@@ -1184,6 +1238,8 @@ async function openPasswordModal(forUserId) {
   if (isOwn) setupPasswordToggle('pwd-current');
   setupPasswordToggle('pwd-new');
   setupPasswordToggle('pwd-confirm');
+  setupPasswordStrength('pwd-new', 'pwd-new-fill', 'pwd-new-label');
+  setupPasswordMatch('pwd-new', 'pwd-confirm', 'pwd-confirm-error');
 
   $('#modal-save').addEventListener('click', async () => {
     const rawNew = $('#pwd-new').value;
@@ -1251,6 +1307,8 @@ async function openUserModal(user) {
     <div class="form-group">
       <label>Mot de passe</label>
       <input class="input" id="user-password" type="password" placeholder="Mot de passe">
+      <div class="password-strength"><div class="strength-fill" id="user-password-fill"></div></div>
+      <div class="strength-label" id="user-password-label"></div>
       <div class="form-error" id="user-password-error"></div>
     </div>
     <div class="form-group">
@@ -1271,7 +1329,12 @@ async function openUserModal(user) {
     <button class="btn btn-primary" id="modal-save">${editMode ? 'Enregistrer' : 'Ajouter'}</button>
   `;
   openModal();
-  if (!editMode) { setupPasswordToggle('user-password'); setupPasswordToggle('user-password-confirm'); }
+  if (!editMode) {
+    setupPasswordToggle('user-password');
+    setupPasswordToggle('user-password-confirm');
+    setupPasswordStrength('user-password', 'user-password-fill', 'user-password-label');
+    setupPasswordMatch('user-password', 'user-password-confirm', 'user-password-confirm-error');
+  }
 
   $('#modal-save').addEventListener('click', async () => {
     const username = $('#user-username').value.trim();
