@@ -125,15 +125,6 @@ function initTables() {
 
   // Migration: add email column
   try { db.exec(`ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''`); } catch {}
-
-  // Seed default admin user if users table is empty
-  const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
-  if (userCount === 0) {
-    const passwordHex = crypto.createHash('sha256').update('admin').digest('hex');
-    const adminPassword = hashPassword(passwordHex);
-    db.prepare('INSERT INTO users (nom, prenom, username, email, password, role) VALUES (?, ?, ?, ?, ?, ?)')
-      .run('Admin', 'Super', 'admin', 'admin@localhost', adminPassword, 'admin');
-  }
 }
 
 export function getSetting(key, defaultVal) {

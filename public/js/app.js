@@ -343,6 +343,7 @@ $('#btn-logout').addEventListener('click', async () => {
 function showLogin() {
   closeModal();
   if (healthPollTimer) { clearInterval(healthPollTimer); healthPollTimer = null; }
+  document.body.style.paddingTop = '';
   state.cards = [];
   state.categories = [];
   state.machines = [];
@@ -355,14 +356,131 @@ function showLogin() {
   state.users = [];
   state.me = null;
   $('#login-page').style.display = 'flex';
+  $('#setup-page').style.display = 'none';
   $('#app-nav').style.display = 'none';
   $('#app-main').style.display = 'none';
   $('#login-password').value = '';
   $('#login-error').style.display = 'none';
 }
 
-function showApp() {
+function showSetup() {
+  closeModal();
+  if (healthPollTimer) { clearInterval(healthPollTimer); healthPollTimer = null; }
+  document.body.style.paddingTop = '0';
+  state.cards = [];
+  state.categories = [];
+  state.machines = [];
+  state.outils = [];
+  state.osList = [];
+  state.fabriquants = [];
+  state.icons = [];
+  state.settings = [];
+  state.health = {};
+  state.users = [];
+  state.me = null;
   $('#login-page').style.display = 'none';
+  $('#setup-page').style.display = 'flex';
+  $('#app-nav').style.display = 'none';
+  $('#app-main').style.display = 'none';
+
+  const form = $('#setup-form');
+  form.innerHTML = `
+    <div class="form-group">
+      <label>Nom</label>
+      <input class="input" id="setup-nom">
+    </div>
+    <div class="form-group">
+      <label>Prénom</label>
+      <input class="input" id="setup-prenom">
+    </div>
+    <div class="form-group">
+      <label>Nom d'utilisateur</label>
+      <input class="input" id="setup-username">
+      <div class="form-error" id="setup-username-error"></div>
+    </div>
+    <div class="form-group">
+      <label>Email</label>
+      <input class="input" id="setup-email" type="email">
+      <div class="form-error" id="setup-email-error"></div>
+    </div>
+    <div class="form-group">
+      <label>Mot de passe</label>
+      <input class="input" id="setup-password" type="password" placeholder="Mot de passe">
+      <div class="password-strength"><div class="strength-fill" id="setup-password-fill"></div></div>
+      <div class="strength-label" id="setup-password-label"></div>
+      <div class="form-error" id="setup-password-error"></div>
+    </div>
+    <div class="form-group">
+      <label>Confirmer le mot de passe</label>
+      <input class="input" id="setup-password-confirm" type="password" placeholder="Retaper le mot de passe">
+      <div class="form-error" id="setup-password-confirm-error"></div>
+    </div>
+    <p style="color:var(--text-muted);font-size:.85rem;margin-bottom:1rem">⚠ Ce compte aura le rôle <strong>Administrateur</strong>.</p>
+    <div class="form-error" id="setup-error" style="margin-bottom:.75rem"></div>
+    <button class="btn btn-primary" id="setup-btn" style="width:100%;justify-content:center;padding:.7rem">Créer mon compte</button>
+  `;
+
+  setupPasswordToggle('setup-password');
+  setupPasswordToggle('setup-password-confirm');
+  setupPasswordStrength('setup-password', 'setup-password-fill', 'setup-password-label');
+  setupPasswordMatch('setup-password', 'setup-password-confirm', 'setup-password-confirm-error');
+
+  $('#setup-btn').addEventListener('click', async () => {
+    const username = $('#setup-username').value.trim();
+    const email = $('#setup-email').value.trim();
+    const rawPassword = $('#setup-password').value;
+    const rawConfirm = $('#setup-password-confirm').value;
+    let hasError = false;
+
+    const errUsername = $('#setup-username-error');
+    const errEmail = $('#setup-email-error');
+    const errPassword = $('#setup-password-error');
+    const errConfirm = $('#setup-password-confirm-error');
+    const errGeneral = $('#setup-error');
+    [errUsername, errEmail, errPassword, errConfirm, errGeneral].forEach(el => { if (el) el.textContent = ''; });
+
+    if (!username) { if (errUsername) { errUsername.textContent = 'Nom d\'utilisateur requis'; hasError = true; } }
+    if (!email) { if (errEmail) { errEmail.textContent = 'Email requis'; hasError = true; } }
+    if (!rawPassword) { if (errPassword) { errPassword.textContent = 'Mot de passe requis'; hasError = true; } }
+    if (!rawConfirm) { if (errConfirm) { errConfirm.textContent = 'Confirmation requise'; hasError = true; } }
+    if (rawPassword && rawConfirm && rawPassword !== rawConfirm) {
+      if (errConfirm) { errConfirm.textContent = 'Les mots de passe ne correspondent pas'; hasError = true; }
+    }
+    if (hasError) return;
+
+    try {
+      const res = await fetch('/api/setup/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nom: $('#setup-nom').value,
+          prenom: $('#setup-prenom').value,
+          username,
+          email,
+          password: await sha256(rawPassword),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (errGeneral) errGeneral.textContent = data.error || 'Erreur lors de la création du compte';
+        return;
+      }
+      localStorage.setItem('nh-token', data.token);
+      API._token = data.token;
+      state.me = data.user;
+      await loadSettings();
+      await refreshDashboard();
+      showApp();
+    } catch (err) {
+      if (errGeneral) errGeneral.textContent = err.message;
+    }
+  });
+}
+
+function showApp() {
+  document.body.style.paddingTop = '';
+  $('#login-page').style.display = 'none';
+  $('#setup-page').style.display = 'none';
   $('#app-nav').style.display = '';
   $('#app-main').style.display = '';
   state.view = 'dashboard';
@@ -1667,6 +1785,11 @@ function confirmModal(msg) {
 
 // ── Init ──
 (async function init() {
+  try {
+    const setupRes = await fetch('/api/setup/status');
+    const setupData = await setupRes.json();
+    if (setupData.setupNeeded) { showSetup(); return; }
+  } catch {}
   const token = localStorage.getItem('nh-token');
   if (token) {
     API._token = token;
