@@ -423,7 +423,7 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
 
 const ALLOWED_COLUMNS = {
   fabriquants: ['nom', 'modele'],
-  cards: ['nom', 'prefix', 'base_url', 'url', 'categorie_id', 'outil_id', 'machine_id'],
+  cards: ['nom', 'prefix', 'base_url', 'url', 'port', 'main_page', 'categorie_id', 'outil_id', 'machine_id'],
   categories: ['nom', 'couleur', 'icon_id'],
   machines: ['nom', 'hostname', 'ip', 'os_id', 'fabriquant_id', 'icon_id'],
   outils: ['nom', 'categorie_id', 'port', 'main_page', 'icon_id'],
@@ -433,7 +433,7 @@ const ALLOWED_COLUMNS = {
 
 const SORTABLE_COLUMNS = {
   fabriquants: ['id', 'nom', 'modele'],
-  cards: ['id', 'nom', 'prefix', 'base_url', 'url', 'categorie_id', 'outil_id', 'machine_id'],
+  cards: ['id', 'nom', 'prefix', 'base_url', 'url', 'port', 'main_page', 'categorie_id', 'outil_id', 'machine_id'],
   categories: ['id', 'nom', 'couleur'],
   machines: ['id', 'nom', 'hostname', 'ip'],
   outils: ['id', 'nom', 'port', 'main_page'],

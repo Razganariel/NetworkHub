@@ -1,0 +1,39 @@
+{
+    "Machine": {
+        "Nom": "string",
+        "Hostname": "string",
+        "IP": "string",
+        "Icon": "url|png|jpeg",
+        "OS": "OS",
+        "Model": "Fabriquant.Model"
+    },
+    "OS": {
+        "Nom": "string", // Linux, Windows, Fedora, Armbian
+        "Version": "string",
+        "Icon": "url|png|jpeg"
+    },
+    "Fabriquant": {
+        "Nom": "string", // Radxa, raspberry, ...
+        "Model": "string" // Pi3, rock 5b, ... 
+    },
+    "Categorie": {
+        "Nom": "string", // DNS, Monitoring, Dashboard,...
+        "Icon": "string",
+        "Couleur": "hexa"
+    },
+    "Outils": {
+        "Nom": "string", // Zabbix, Monitoring, Dashboard,...
+        "Categorie": "Categorie.Nom",
+        "Icon": "url|png|jpeg", // SI VIDE alors Icone officiel SINON valeur saisie
+        "Port": "number", // SI VIDE alors port officiel SINON valeur saisie
+        "MainPage": "string" // fin de l'url de la page d'accueil : /login, /system,...
+    },
+    "Card": {
+        "Nom": "string", // SI VIDE alors concaténation Machine.Nom - Outils.Nom SINON valeur saisie
+        "Prefix": "select", // http:// ou https://
+        "BaseUrl": "string", // SI VIDE alors Machine.IP SINON valeur saisie
+        "Url": "string", // concat Prefix + BaseUrl + Outils.Port + Outils.MainPage
+        "Categorie": "Outils.Categorie",
+        "Outils": "Outils.Nom"
+    }
+}
