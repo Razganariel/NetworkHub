@@ -53,6 +53,12 @@ setInterval(() => {
   }
 }, 60 * 1000);
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function validateEmail(email) {
+  if (!email || !email.trim()) return true; // optional
+  return EMAIL_RE.test(email.trim());
+}
+
 // ── Init debug mode from DB ──
 function initDebugMode() {
   try {
@@ -317,6 +323,9 @@ app.put('/api/users/me', (req, res) => {
   const user = req.user;
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
   const { nom, prenom, username, email } = req.body;
+  if (email !== undefined && !validateEmail(email)) {
+    return res.status(400).json({ error: 'Invalid email format' });
+  }
   try {
     const updates = [];
     const vals = [];
@@ -370,6 +379,8 @@ app.post('/api/users', requireAdmin, (req, res) => {
   const db = getDb();
   const { nom, prenom, username, email, password, role } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'username and password are required' });
+  if (!email) return res.status(400).json({ error: 'email is required' });
+  if (!validateEmail(email)) return res.status(400).json({ error: 'Invalid email format' });
   try {
     const stmt = db.prepare('INSERT INTO users (nom, prenom, username, email, password, role) VALUES (?, ?, ?, ?, ?, ?)');
     const result = stmt.run(nom || '', prenom || '', username, email || '', hashPassword(password), role || 'user');
@@ -385,6 +396,9 @@ app.post('/api/users', requireAdmin, (req, res) => {
 app.put('/api/users/:id', requireAdmin, (req, res) => {
   const db = getDb();
   const { nom, prenom, username, email, password, role } = req.body;
+  if (email !== undefined && !validateEmail(email)) {
+    return res.status(400).json({ error: 'Invalid email format' });
+  }
   try {
     const updates = [];
     const vals = [];

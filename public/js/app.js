@@ -104,10 +104,88 @@ function esc(str) {
   d.textContent = str;
   return d.innerHTML;
 }
+function passwordEntropy(pwd) {
+  if (!pwd) return 0;
+  let pool = 0;
+  if (/[a-z]/.test(pwd)) pool += 26;
+  if (/[A-Z]/.test(pwd)) pool += 26;
+  if (/\d/.test(pwd)) pool += 10;
+  if (/[^a-zA-Z0-9]/.test(pwd)) pool += 33;
+  return Math.round(pwd.length * (pool ? Math.log2(pool) : 0));
+}
+const STRENGTH_THRESHOLDS = [
+  { min: 0, label: 'Très faible', class: 'very-weak' },
+  { min: 30, label: 'Faible', class: 'weak' },
+  { min: 50, label: 'Correct', class: 'fair' },
+  { min: 60, label: 'Fort', class: 'strong' },
+  { min: 80, label: 'Très fort', class: 'very-strong' },
+];
+function getStrengthLevel(entropy) {
+  for (let i = STRENGTH_THRESHOLDS.length - 1; i >= 0; i--) {
+    if (entropy >= STRENGTH_THRESHOLDS[i].min) return STRENGTH_THRESHOLDS[i];
+  }
+  return STRENGTH_THRESHOLDS[0];
+}
+function setupPasswordStrength(inputId, fillId, labelId) {
+  const input = document.getElementById(inputId);
+  const fill = document.getElementById(fillId);
+  const label = document.getElementById(labelId);
+  if (!input || !fill || !label) return;
+  input.addEventListener('input', () => {
+    const e = passwordEntropy(input.value);
+    const level = getStrengthLevel(e);
+    fill.style.width = Math.min(100, (e / 100) * 100) + '%';
+    fill.className = 'strength-fill ' + level.class;
+    label.textContent = level.label + ' (' + e + ' bits)';
+  });
+}
+function setupPasswordMatch(inputId, confirmId, errorId) {
+  const input = document.getElementById(inputId);
+  const confirm = document.getElementById(confirmId);
+  const errEl = document.getElementById(errorId);
+  if (!input || !confirm || !errEl) return;
+  const check = () => {
+    if (!confirm.value) { errEl.textContent = ''; return; }
+    errEl.textContent = input.value !== confirm.value ? 'Les mots de passe ne correspondent pas' : '';
+  };
+  input.addEventListener('input', check);
+  confirm.addEventListener('input', check);
+}
 function parseId(val) {
   if (val === undefined || val === null || val === '') return null;
   const n = parseInt(val, 10);
   return isNaN(n) ? null : n;
+}
+
+function setupPasswordToggle(id) {
+  const input = document.getElementById(id);
+  if (!input) return;
+  const wrapper = input.parentElement;
+  const existing = wrapper.querySelector('.btn-eye');
+  if (existing) return;
+
+  const pwWrap = document.createElement('div');
+  pwWrap.style.cssText = 'position:relative;display:flex;align-items:center';
+  input.parentElement.insertBefore(pwWrap, input);
+  pwWrap.appendChild(input);
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'btn-eye';
+  toggle.tabIndex = -1;
+  toggle.setAttribute('aria-label', 'Afficher le mot de passe');
+  toggle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  toggle.addEventListener('click', () => {
+    const isPassword = input.type === 'password';
+    input.type = isPassword ? 'text' : 'password';
+    toggle.innerHTML = isPassword
+      ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+      : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+    toggle.setAttribute('aria-label', isPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
+  });
+  input.style.paddingRight = '2.3rem';
+  toggle.style.cssText = 'position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-muted);padding:4px;display:flex;z-index:1';
+  pwWrap.appendChild(toggle);
 }
 
 const ENTITY_TYPE_MAP = {
@@ -750,10 +828,12 @@ async function renderProfile() {
     <div class="form-group">
       <label>Nom d'utilisateur</label>
       <input class="input" id="profile-username" value="${esc(u.username)}">
+      <div class="form-error" id="profile-username-error"></div>
     </div>
     <div class="form-group">
       <label>Email</label>
       <input class="input" id="profile-email" value="${esc(u.email || '')}" type="email">
+      <div class="form-error" id="profile-email-error"></div>
     </div>
     <div class="form-group">
       <label>Mot de passe <button class="btn btn-sm" id="profile-change-pwd" style="margin-left:.5rem">Modifier</button></label>
@@ -767,20 +847,36 @@ async function renderProfile() {
   `;
 
   $('#profile-save').addEventListener('click', async () => {
+    const username = $('#profile-username').value.trim();
+    const email = $('#profile-email').value.trim();
     const data = {
       nom: $('#profile-nom').value,
       prenom: $('#profile-prenom').value,
-      username: $('#profile-username').value,
-      email: $('#profile-email').value,
+      username,
+      email,
     };
-    if (!data.username) { showToast('Le nom d\'utilisateur est requis', 'error'); return; }
+
+    const errUsername = $('#profile-username-error');
+    const errEmail = $('#profile-email-error');
+    [errUsername, errEmail].forEach(el => { if (el) el.textContent = ''; });
+
+    let hasError = false;
+    if (!username) { if (errUsername) { errUsername.textContent = 'Nom d\'utilisateur requis'; hasError = true; } }
+    if (!email) { if (errEmail) { errEmail.textContent = 'Email requis'; hasError = true; } }
+    if (hasError) return;
+
     try {
       state.me = await API.updateMe(data);
       $('#profile-msg').textContent = 'Profil enregistré.';
+      $('#profile-msg').style.color = 'var(--green)';
       setTimeout(() => { $('#profile-msg').textContent = ''; }, 3000);
     } catch (err) {
-      $('#profile-msg').textContent = 'Erreur : ' + err.message;
-      $('#profile-msg').style.color = 'var(--red)';
+      if (err.message === 'Invalid email format' && errEmail) {
+        errEmail.textContent = 'Format d\'email invalide';
+      } else {
+        $('#profile-msg').textContent = 'Erreur : ' + err.message;
+        $('#profile-msg').style.color = 'var(--red)';
+      }
     }
   });
 
@@ -1124,10 +1220,14 @@ async function openPasswordModal(forUserId) {
     <div class="form-group">
       <label>Nouveau mot de passe</label>
       <input class="input" id="pwd-new" type="password" autocomplete="new-password">
+      <div class="password-strength"><div class="strength-fill" id="pwd-new-fill"></div></div>
+      <div class="strength-label" id="pwd-new-label"></div>
+      <div class="form-error" id="pwd-new-error"></div>
     </div>
     <div class="form-group">
       <label>Confirmer le mot de passe</label>
       <input class="input" id="pwd-confirm" type="password" autocomplete="new-password">
+      <div class="form-error" id="pwd-confirm-error"></div>
     </div>
   `;
   $('#modal-footer').innerHTML = `
@@ -1135,11 +1235,27 @@ async function openPasswordModal(forUserId) {
     <button class="btn btn-primary" id="modal-save">Enregistrer</button>
   `;
   openModal();
+  if (isOwn) setupPasswordToggle('pwd-current');
+  setupPasswordToggle('pwd-new');
+  setupPasswordToggle('pwd-confirm');
+  setupPasswordStrength('pwd-new', 'pwd-new-fill', 'pwd-new-label');
+  setupPasswordMatch('pwd-new', 'pwd-confirm', 'pwd-confirm-error');
 
   $('#modal-save').addEventListener('click', async () => {
     const rawNew = $('#pwd-new').value;
     const rawConfirm = $('#pwd-confirm').value;
-    if (!rawNew || rawNew !== rawConfirm) { showToast('Les mots de passe ne correspondent pas', 'error'); return; }
+    const errNew = $('#pwd-new-error');
+    const errConfirm = $('#pwd-confirm-error');
+    [errNew, errConfirm].forEach(el => { if (el) el.textContent = ''; });
+
+    let hasError = false;
+    if (!rawNew) { if (errNew) { errNew.textContent = 'Nouveau mot de passe requis'; hasError = true; } }
+    if (!rawConfirm) { if (errConfirm) { errConfirm.textContent = 'Confirmation requise'; hasError = true; } }
+    if (rawNew && rawConfirm && rawNew !== rawConfirm) {
+      if (errConfirm) { errConfirm.textContent = 'Les mots de passe ne correspondent pas'; hasError = true; }
+    }
+    if (hasError) return;
+
     const newPwd = await sha256(rawNew);
     try {
       if (isOwn) {
@@ -1177,10 +1293,12 @@ async function openUserModal(user) {
     <div class="form-group">
       <label>Nom d'utilisateur</label>
       <input class="input" id="user-username" value="${esc(user ? user.username : '')}">
+      <div class="form-error" id="user-username-error"></div>
     </div>
     <div class="form-group">
       <label>Email</label>
       <input class="input" id="user-email" value="${esc(user ? (user.email || '') : '')}" type="email">
+      <div class="form-error" id="user-email-error"></div>
     </div>
     ${editMode ? `
     <div class="form-group">
@@ -1189,6 +1307,14 @@ async function openUserModal(user) {
     <div class="form-group">
       <label>Mot de passe</label>
       <input class="input" id="user-password" type="password" placeholder="Mot de passe">
+      <div class="password-strength"><div class="strength-fill" id="user-password-fill"></div></div>
+      <div class="strength-label" id="user-password-label"></div>
+      <div class="form-error" id="user-password-error"></div>
+    </div>
+    <div class="form-group">
+      <label>Confirmer le mot de passe</label>
+      <input class="input" id="user-password-confirm" type="password" placeholder="Retaper le mot de passe">
+      <div class="form-error" id="user-password-confirm-error"></div>
     </div>`}
     <div class="form-group">
       <label>Rôle</label>
@@ -1203,14 +1329,24 @@ async function openUserModal(user) {
     <button class="btn btn-primary" id="modal-save">${editMode ? 'Enregistrer' : 'Ajouter'}</button>
   `;
   openModal();
+  if (!editMode) {
+    setupPasswordToggle('user-password');
+    setupPasswordToggle('user-password-confirm');
+    setupPasswordStrength('user-password', 'user-password-fill', 'user-password-label');
+    setupPasswordMatch('user-password', 'user-password-confirm', 'user-password-confirm-error');
+  }
 
   $('#modal-save').addEventListener('click', async () => {
     const username = $('#user-username').value.trim();
-    const passwordEl = $('#user-password');
-    const rawPassword = passwordEl ? passwordEl.value : '';
     const email = $('#user-email').value.trim();
-    if (!username) { showToast('Le nom d\'utilisateur est requis', 'error'); return; }
-    if (!editMode && !rawPassword) { showToast('Le mot de passe est requis', 'error'); return; }
+    let hasError = false;
+
+    const errUsername = $('#user-username-error');
+    const errEmail = $('#user-email-error');
+    [errUsername, errEmail].forEach(el => { if (el) el.textContent = ''; });
+
+    if (!username) { if (errUsername) { errUsername.textContent = 'Nom d\'utilisateur requis'; hasError = true; } }
+    if (!email) { if (errEmail) { errEmail.textContent = 'Email requis'; hasError = true; } }
 
     const data = {
       nom: $('#user-nom').value,
@@ -1219,7 +1355,23 @@ async function openUserModal(user) {
       email,
       role: $('#user-role').value,
     };
-    if (rawPassword) data.password = await sha256(rawPassword);
+
+    if (!editMode) {
+      const rawPassword = $('#user-password').value;
+      const rawConfirm = $('#user-password-confirm').value;
+      const errPassword = $('#user-password-error');
+      const errConfirm = $('#user-password-confirm-error');
+      [errPassword, errConfirm].forEach(el => { if (el) el.textContent = ''; });
+
+      if (!rawPassword) { if (errPassword) { errPassword.textContent = 'Mot de passe requis'; hasError = true; } }
+      if (!rawConfirm) { if (errConfirm) { errConfirm.textContent = 'Confirmation requise'; hasError = true; } }
+      if (rawPassword && rawConfirm && rawPassword !== rawConfirm) {
+        if (errConfirm) { errConfirm.textContent = 'Les mots de passe ne correspondent pas'; hasError = true; }
+      }
+      if (!hasError) data.password = await sha256(rawPassword);
+    }
+
+    if (hasError) return;
 
     try {
       let result;
@@ -1233,7 +1385,11 @@ async function openUserModal(user) {
       updateState('users', editMode ? 'update' : 'create', result);
       renderSettingsTable();
     } catch (err) {
-      showToast('Erreur : ' + err.message, 'error');
+      if (err.message === 'Invalid email format' && errEmail) {
+        errEmail.textContent = 'Format d\'email invalide';
+      } else {
+        showToast('Erreur : ' + err.message, 'error');
+      }
     }
   });
 
