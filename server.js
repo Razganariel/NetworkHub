@@ -468,7 +468,7 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
 });
 
 const ALLOWED_COLUMNS = {
-  fabriquants: ['nom', 'modele'],
+  fabriquants: ['nom', 'modele', 'icon_id'],
   cards: ['nom', 'prefix', 'base_url', 'url', 'port', 'main_page', 'categorie_id', 'outil_id', 'machine_id'],
   categories: ['nom', 'couleur', 'icon_id'],
   machines: ['nom', 'hostname', 'ip', 'os_id', 'fabriquant_id', 'icon_id'],
@@ -478,7 +478,7 @@ const ALLOWED_COLUMNS = {
 };
 
 const SORTABLE_COLUMNS = {
-  fabriquants: ['id', 'nom', 'modele'],
+  fabriquants: ['id', 'nom', 'modele', 'icon_id'],
   cards: ['id', 'nom', 'prefix', 'base_url', 'url', 'port', 'main_page', 'categorie_id', 'outil_id', 'machine_id'],
   categories: ['id', 'nom', 'couleur'],
   machines: ['id', 'nom', 'hostname', 'ip'],

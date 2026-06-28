@@ -1246,7 +1246,7 @@ async function renderSettingsTable() {
     outils: { create: () => openEntityModal('outils', 'Outil', ['nom', 'categorie_id', 'port', 'main_page', 'icon_id']), label: 'Outil' },
     categories: { create: () => openEntityModal('categories', 'Catégorie', ['nom', 'couleur', 'icon_id']), label: 'Catégorie' },
     os: { create: () => openEntityModal('os', 'OS', ['nom', 'version', 'icon_id']), label: 'OS' },
-    fabriquants: { create: () => openEntityModal('fabriquants', 'Fabriquant', ['nom', 'modele']), label: 'Fabriquant' },
+    fabriquants: { create: () => openEntityModal('fabriquants', 'Fabriquant', ['nom', 'modele', 'icon_id']), label: 'Fabriquant' },
     icons: { create: () => openEntityModal('icons', 'Icône', ['nom', 'filename', 'entity_type', 'data']), label: 'Icône' },
   };
   const entity = entityMap[tab];
@@ -1267,7 +1267,7 @@ async function renderSettingsTable() {
     outils: (item) => openEntityModal('outils', 'Outil', ['nom', 'categorie_id', 'port', 'main_page', 'icon_id'], item),
     categories: (item) => openEntityModal('categories', 'Catégorie', ['nom', 'couleur', 'icon_id'], item),
     os: (item) => openEntityModal('os', 'OS', ['nom', 'version', 'icon_id'], item),
-    fabriquants: (item) => openEntityModal('fabriquants', 'Fabriquant', ['nom', 'modele'], item),
+    fabriquants: (item) => openEntityModal('fabriquants', 'Fabriquant', ['nom', 'modele', 'icon_id'], item),
     icons: (item) => openEntityModal('icons', 'Icône', ['nom', 'filename', 'entity_type', 'data'], item),
   };
 
@@ -1524,7 +1524,7 @@ async function openEntityModal(entityType, label, fieldDefs, item) {
   const editMode = !!item;
 
   // Load reference data for foreign keys
-  if (['machines', 'outils', 'categories', 'os'].includes(entityType)) {
+  if (['machines', 'outils', 'categories', 'os', 'fabriquants'].includes(entityType)) {
     await Promise.all([loadCategories(), loadMachines(), loadOutils(), loadOs(), loadFabriquants(), loadIcons()]);
   }
 

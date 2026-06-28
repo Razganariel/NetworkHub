@@ -125,6 +125,8 @@ function initTables() {
 
   // Migration: add email column
   try { db.exec(`ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''`); } catch {}
+  // Migration: add icon_id column to fabriquants
+  try { db.exec(`ALTER TABLE fabriquants ADD COLUMN icon_id INTEGER REFERENCES icons(id) ON DELETE SET NULL`); } catch {}
 }
 
 export function getSetting(key, defaultVal) {
@@ -160,9 +162,7 @@ function seedIfEmpty() {
   insert('fabriquants', data.fabriquants);
   insert('os', data.os);
   insert('categories', data.categories);
-  insert('machines', data.machines);
   insert('outils', data.outils);
-  insert('cards', data.cards);
 }
 
 function makeIconSvg(label, color) {
@@ -170,77 +170,131 @@ function makeIconSvg(label, color) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="${color}"/><text x="50" y="50" text-anchor="middle" dy=".35em" fill="#fff" font-size="40" font-weight="700" font-family="sans-serif">${letter}</text></svg>`;
 }
 
-const ICON_COLORS = {
-  fedora: '#294172', armbian: '#e45c2f', dsm: '#00b4ef', ubuntu: '#e95420',
-  zabbix: '#cc0000', pihole: '#f60', wireguard: '#881b94', vaultwarden: '#175ddc',
-  grafana: '#f46800', 'synology-dsm': '#00b4ef', 'proxmox-ve': '#e57000',
-  monitoring: '#3fb950', dns: '#58a6ff', vpn: '#bc8cff', securite: '#f85149',
-  stockage: '#d29922', virtualisation: '#f0883e',
-};
+const ICONS_DIR = path.join(__dirname, 'public', 'icons');
+
+const ICON_DEFS = [
+  // OS
+  { nom: 'fedora', entity_type: 'os', file: 'fedora.svg', color: '#294172' },
+  { nom: 'armbian', entity_type: 'os', file: 'armbian.svg', color: '#e45c2f' },
+  { nom: 'dsm', entity_type: 'os', file: 'synologie.svg', color: '#00b4ef' },
+  { nom: 'ubuntu', entity_type: 'os', file: 'ubuntu.svg', color: '#e95420' },
+  { nom: 'debian', entity_type: 'os', file: 'debian.svg', color: '#A80030' },
+  { nom: 'windows', entity_type: 'os', file: 'windows.svg', color: '#0078d4' },
+  // Outils
+  { nom: 'zabbix', entity_type: 'outil', file: 'zabbix.svg', color: '#cc0000' },
+  { nom: 'pihole', entity_type: 'outil', file: 'pi-hole.svg', color: '#f60' },
+  { nom: 'wireguard', entity_type: 'outil', file: 'wireguard.svg', color: '#881b94' },
+  { nom: 'vaultwarden', entity_type: 'outil', file: 'vaultwarden.svg', color: '#175ddc' },
+  { nom: 'grafana', entity_type: 'outil', file: 'grafana.svg', color: '#f46800' },
+  { nom: 'synology-dsm', entity_type: 'outil', file: 'synologie.svg', color: '#00b4ef' },
+  { nom: 'proxmox-ve', entity_type: 'outil', file: 'proxmox.svg', color: '#e57000' },
+  { nom: 'nginx-proxy-manager', entity_type: 'outil', file: 'nginx-proxy-manager.svg', color: '#009639' },
+  { nom: 'uptime-kuma', entity_type: 'outil', file: null, color: '#6c5ce7' },
+  { nom: 'cockpit', entity_type: 'outil', file: 'cockpit.svg', color: '#3fb950' },
+  { nom: 'docker', entity_type: 'outil', file: 'docker.svg', color: '#2496ed' },
+  { nom: 'home-assistant', entity_type: 'outil', file: 'home-assistant.svg', color: '#03a9f4' },
+  { nom: 'nextdns', entity_type: 'outil', file: 'nextdns.svg', color: '#007bff' },
+  { nom: 'prometheus', entity_type: 'outil', file: 'prometheus.svg', color: '#e6522c' },
+  { nom: 'nginx', entity_type: 'outil', file: 'nginx.svg', color: '#009639' },
+  { nom: 'podman', entity_type: 'outil', file: 'podman.svg', color: '#892CA0' },
+  // Categories
+  { nom: 'monitoring', entity_type: 'category', file: 'monitoring.svg', color: '#3fb950' },
+  { nom: 'dns', entity_type: 'category', file: 'dns.svg', color: '#58a6ff' },
+  { nom: 'vpn', entity_type: 'category', file: 'vpn.svg', color: '#bc8cff' },
+  { nom: 'securite', entity_type: 'category', file: 'security.svg', color: '#f85149' },
+  { nom: 'stockage', entity_type: 'category', file: 'storage-network.svg', color: '#d29922' },
+  { nom: 'virtualisation', entity_type: 'category', file: null, color: '#f0883e' },
+  { nom: 'proxy', entity_type: 'category', file: null, color: '#f46800' },
+  { nom: 'firewall', entity_type: 'category', file: 'firewall.svg', color: '#f85149' },
+  // Fabriquants
+  { nom: 'dell', entity_type: 'fabriquant', file: 'dell.svg', color: '#007db8' },
+  { nom: 'espressif', entity_type: 'fabriquant', file: 'espressif.svg', color: '#e7352c' },
+  { nom: 'hp', entity_type: 'fabriquant', file: 'hp.svg', color: '#0096d6' },
+  { nom: 'vmware', entity_type: 'fabriquant', file: 'vmware.svg', color: '#607078' },
+  { nom: 'radxa', entity_type: 'fabriquant', file: 'radxa.svg', color: '#e95420' },
+  { nom: 'raspberry', entity_type: 'fabriquant', file: 'raspberry.svg', color: '#c51a4a' },
+  // Generic
+  { nom: 'pc-tower', entity_type: '', file: 'pc-tower.svg', color: '#58a6ff' },
+  { nom: 'server', entity_type: '', file: 'server.svg', color: '#58a6ff' },
+  { nom: 'dashboard', entity_type: '', file: 'dashboard.svg', color: '#58a6ff' },
+  { nom: 'save', entity_type: '', file: 'save.svg', color: '#58a6ff' },
+];
 
 function getDefaultSeed() {
+  const icons = ICON_DEFS.map((def) => {
+    let data;
+    if (def.file) {
+      const fp = path.join(ICONS_DIR, def.file);
+      if (fs.existsSync(fp)) {
+        data = fs.readFileSync(fp, 'utf-8');
+      } else {
+        data = makeIconSvg(def.nom, def.color);
+      }
+    } else {
+      data = makeIconSvg(def.nom, def.color);
+    }
+    return {
+      nom: def.nom,
+      filename: def.file || `${def.nom}.svg`,
+      entity_type: def.entity_type,
+      data,
+    };
+  });
+
+  // Build lookup: icon nom → auto-increment id (1-based)
+  const idOf = {};
+  ICON_DEFS.forEach((def, i) => { idOf[def.nom] = i + 1; });
+
   return {
-    icons: [
-      { nom: 'fedora', filename: 'fedora.svg', entity_type: 'os', data: makeIconSvg('fedora', ICON_COLORS.fedora) },
-      { nom: 'armbian', filename: 'armbian.svg', entity_type: 'os', data: makeIconSvg('armbian', ICON_COLORS.armbian) },
-      { nom: 'dsm', filename: 'dsm.svg', entity_type: 'os', data: makeIconSvg('dsm', ICON_COLORS.dsm) },
-      { nom: 'ubuntu', filename: 'ubuntu.svg', entity_type: 'os', data: makeIconSvg('ubuntu', ICON_COLORS.ubuntu) },
-      { nom: 'zabbix', filename: 'zabbix.svg', entity_type: 'outil', data: makeIconSvg('zabbix', ICON_COLORS.zabbix) },
-      { nom: 'pihole', filename: 'pihole.svg', entity_type: 'outil', data: makeIconSvg('pihole', ICON_COLORS.pihole) },
-      { nom: 'wireguard', filename: 'wireguard.svg', entity_type: 'outil', data: makeIconSvg('wireguard', ICON_COLORS.wireguard) },
-      { nom: 'vaultwarden', filename: 'vaultwarden.svg', entity_type: 'outil', data: makeIconSvg('vaultwarden', ICON_COLORS.vaultwarden) },
-      { nom: 'grafana', filename: 'grafana.svg', entity_type: 'outil', data: makeIconSvg('grafana', ICON_COLORS.grafana) },
-      { nom: 'synology-dsm', filename: 'synology-dsm.svg', entity_type: 'outil', data: makeIconSvg('synology-dsm', ICON_COLORS['synology-dsm']) },
-      { nom: 'proxmox-ve', filename: 'proxmox-ve.svg', entity_type: 'outil', data: makeIconSvg('proxmox-ve', ICON_COLORS['proxmox-ve']) },
-      { nom: 'monitoring', filename: 'monitoring.svg', entity_type: 'category', data: makeIconSvg('monitoring', ICON_COLORS.monitoring) },
-      { nom: 'dns', filename: 'dns.svg', entity_type: 'category', data: makeIconSvg('dns', ICON_COLORS.dns) },
-      { nom: 'vpn', filename: 'vpn.svg', entity_type: 'category', data: makeIconSvg('vpn', ICON_COLORS.vpn) },
-      { nom: 'securite', filename: 'securite.svg', entity_type: 'category', data: makeIconSvg('securite', ICON_COLORS.securite) },
-      { nom: 'stockage', filename: 'stockage.svg', entity_type: 'category', data: makeIconSvg('stockage', ICON_COLORS.stockage) },
-      { nom: 'virtualisation', filename: 'virtualisation.svg', entity_type: 'category', data: makeIconSvg('virtualisation', ICON_COLORS.virtualisation) },
-    ],
+    icons,
     fabriquants: [
-      { nom: 'Radxa', modele: 'ROCK 5B' },
-      { nom: 'Synology', modele: 'DS220+' },
-      { nom: 'Generic', modele: 'VPS' },
-      { nom: 'Raspberry Pi', modele: 'Pi 4' },
+      { nom: 'Radxa', modele: 'ROCK 5B', icon_id: idOf.radxa },
+      { nom: 'Synology', modele: 'DS220+', icon_id: idOf['synology-dsm'] },
+      { nom: 'Raspberry Pi', modele: 'Pi 4', icon_id: idOf.raspberry },
+      { nom: 'QNAP', modele: 'TS-464', icon_id: null },
+      { nom: 'Intel NUC', modele: 'NUC 13 Pro', icon_id: null },
+      { nom: 'Generic', modele: 'VPS', icon_id: idOf['pc-tower'] },
+      { nom: 'Dell', modele: 'PowerEdge', icon_id: idOf.dell },
+      { nom: 'Espressif', modele: 'ESP32', icon_id: idOf.espressif },
+      { nom: 'HP', modele: 'ProLiant', icon_id: idOf.hp },
+      { nom: 'VMware', modele: 'ESXi', icon_id: idOf.vmware },
     ],
     os: [
-      { nom: 'Fedora', version: '40', icon_id: 1 },
-      { nom: 'Armbian', version: '24.5', icon_id: 2 },
-      { nom: 'DSM', version: '7.2', icon_id: 3 },
-      { nom: 'Ubuntu', version: '24.04', icon_id: 4 },
+      { nom: 'Fedora', version: '41', icon_id: idOf.fedora },
+      { nom: 'Armbian', version: '24.11', icon_id: idOf.armbian },
+      { nom: 'DSM', version: '7.2', icon_id: idOf.dsm },
+      { nom: 'Ubuntu', version: '24.04', icon_id: idOf.ubuntu },
+      { nom: 'Debian', version: '12', icon_id: idOf.debian },
+      { nom: 'Proxmox VE', version: '8.2', icon_id: idOf['proxmox-ve'] },
+      { nom: 'Windows Server', version: '2025', icon_id: idOf.windows },
     ],
     categories: [
-      { nom: 'Monitoring', icon_id: 12, couleur: '#3fb950' },
-      { nom: 'DNS', icon_id: 13, couleur: '#58a6ff' },
-      { nom: 'VPN', icon_id: 14, couleur: '#bc8cff' },
-      { nom: 'Securite', icon_id: 15, couleur: '#f85149' },
-      { nom: 'Stockage', icon_id: 16, couleur: '#d29922' },
-      { nom: 'Virtualisation', icon_id: 17, couleur: '#f0883e' },
-    ],
-    machines: [
-      { nom: 'Monster', hostname: 'monster.local', ip: '192.168.1.10', os_id: 1, fabriquant_id: null, icon_id: null },
-      { nom: 'ROCK-5B', hostname: 'rock5b.local', ip: '192.168.1.20', os_id: 2, fabriquant_id: 1, icon_id: null },
-      { nom: 'Synology', hostname: 'diskstation.local', ip: '192.168.1.30', os_id: 3, fabriquant_id: 2, icon_id: null },
-      { nom: 'VPS', hostname: 'vps.example.com', ip: '10.0.0.1', os_id: 4, fabriquant_id: 3, icon_id: null },
+      { nom: 'Monitoring', icon_id: idOf.monitoring, couleur: '#3fb950' },
+      { nom: 'DNS', icon_id: idOf.dns, couleur: '#58a6ff' },
+      { nom: 'VPN', icon_id: idOf.vpn, couleur: '#bc8cff' },
+      { nom: 'Securite', icon_id: idOf.securite, couleur: '#f85149' },
+      { nom: 'Stockage', icon_id: idOf.stockage, couleur: '#d29922' },
+      { nom: 'Virtualisation', icon_id: idOf.virtualisation, couleur: '#f0883e' },
+      { nom: 'Proxy', icon_id: idOf.proxy, couleur: '#f46800' },
+      { nom: 'Firewall', icon_id: idOf.firewall, couleur: '#f85149' },
     ],
     outils: [
-      { nom: 'Zabbix', categorie_id: 1, port: 8080, main_page: '/zabbix', icon_id: 5 },
-      { nom: 'Pi-hole', categorie_id: 2, port: 80, main_page: '/admin', icon_id: 6 },
-      { nom: 'WireGuard', categorie_id: 3, port: 51821, main_page: '/', icon_id: 7 },
-      { nom: 'Vaultwarden', categorie_id: 4, port: 8080, main_page: '/', icon_id: 8 },
-      { nom: 'Grafana', categorie_id: 1, port: 3000, main_page: '/login', icon_id: 9 },
-      { nom: 'Synology DSM', categorie_id: 5, port: 5000, main_page: '/', icon_id: 10 },
-      { nom: 'Proxmox VE', categorie_id: 6, port: 8006, main_page: '/', icon_id: 11 },
-    ],
-    cards: [
-      { nom: 'Monster - Zabbix', prefix: 'http://', base_url: '', url: 'http://192.168.1.10:8080/zabbix', categorie_id: 1, outil_id: 1, machine_id: 1 },
-      { nom: 'Monster - Grafana', prefix: 'http://', base_url: '', url: 'http://192.168.1.10:3000/login', categorie_id: 1, outil_id: 5, machine_id: 1 },
-      { nom: 'ROCK-5B - Pi-hole', prefix: 'http://', base_url: '', url: 'http://192.168.1.20:80/admin', categorie_id: 2, outil_id: 2, machine_id: 2 },
-      { nom: 'ROCK-5B - WireGuard', prefix: 'http://', base_url: '', url: 'http://192.168.1.20:51821/', categorie_id: 3, outil_id: 3, machine_id: 2 },
-      { nom: 'VPS - Vaultwarden', prefix: 'https://', base_url: '', url: 'https://10.0.0.1:8080/', categorie_id: 4, outil_id: 4, machine_id: 4 },
-      { nom: 'Synology - DSM', prefix: 'http://', base_url: '', url: 'http://192.168.1.30:5000/', categorie_id: 5, outil_id: 6, machine_id: 3 },
+      { nom: 'Zabbix', categorie_id: 1, port: 8080, main_page: '/zabbix', icon_id: idOf.zabbix },
+      { nom: 'Pi-hole', categorie_id: 2, port: 80, main_page: '/admin', icon_id: idOf.pihole },
+      { nom: 'WireGuard', categorie_id: 3, port: 51821, main_page: '/', icon_id: idOf.wireguard },
+      { nom: 'Vaultwarden', categorie_id: 4, port: 8080, main_page: '/', icon_id: idOf.vaultwarden },
+      { nom: 'Grafana', categorie_id: 1, port: 3000, main_page: '/login', icon_id: idOf.grafana },
+      { nom: 'Synology DSM', categorie_id: 5, port: 5000, main_page: '/', icon_id: idOf['synology-dsm'] },
+      { nom: 'Proxmox VE', categorie_id: 6, port: 8006, main_page: '/', icon_id: idOf['proxmox-ve'] },
+      { nom: 'Uptime Kuma', categorie_id: 1, port: 3001, main_page: '/', icon_id: idOf['uptime-kuma'] },
+      { nom: 'Nginx Proxy Manager', categorie_id: 7, port: 81, main_page: '/', icon_id: idOf['nginx-proxy-manager'] },
+      { nom: 'Cockpit', categorie_id: 1, port: 9090, main_page: '/', icon_id: idOf.cockpit },
+      { nom: 'Docker', categorie_id: 6, port: 9000, main_page: '/', icon_id: idOf.docker },
+      { nom: 'Home Assistant', categorie_id: 1, port: 8123, main_page: '/', icon_id: idOf['home-assistant'] },
+      { nom: 'NextDNS', categorie_id: 2, port: 443, main_page: '/', icon_id: idOf.nextdns },
+      { nom: 'Prometheus', categorie_id: 1, port: 9090, main_page: '/', icon_id: idOf.prometheus },
+      { nom: 'Nginx', categorie_id: 7, port: 80, main_page: '/', icon_id: idOf.nginx },
+      { nom: 'Podman', categorie_id: 6, port: null, main_page: '/', icon_id: idOf.podman },
     ],
   };
 }
