@@ -1,0 +1,44 @@
+{
+    "Icon": {
+        "Nom": "string",
+        "Filename": "string",
+        "EntityType": "string"
+    },
+    "Machine": {
+        "Nom": "string",
+        "Hostname": "string",
+        "IP": "string",
+        "Icon": "Icon.Nom",
+        "OS": "OS",
+        "Model": "Fabriquant.Model"
+    },
+    "OS": {
+        "Nom": "string",
+        "Version": "string",
+        "Icon": "Icon.Nom"
+    },
+    "Fabriquant": {
+        "Nom": "string",
+        "Model": "string"
+    },
+    "Categorie": {
+        "Nom": "string",
+        "Icon": "Icon.Nom",
+        "Couleur": "hexa"
+    },
+    "Outils": {
+        "Nom": "string",
+        "Categorie": "Categorie.Nom",
+        "Icon": "Icon.Nom",
+        "Port": "number",
+        "MainPage": "string"
+    },
+    "Card": {
+        "Nom": "string",
+        "Prefix": "select",
+        "BaseUrl": "string",
+        "Url": "string",
+        "Categorie": "Outils.Categorie",
+        "Outils": "Outils.Nom"
+    }
+}

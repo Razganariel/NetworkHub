@@ -89,6 +89,8 @@ function initTables() {
       prefix TEXT NOT NULL DEFAULT 'http://',
       base_url TEXT DEFAULT '',
       url TEXT NOT NULL,
+      port TEXT,
+      main_page TEXT,
       categorie_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
       outil_id INTEGER REFERENCES outils(id) ON DELETE SET NULL,
       machine_id INTEGER REFERENCES machines(id) ON DELETE SET NULL
@@ -97,6 +99,9 @@ function initTables() {
 
   // Migration: add data column if missing
   try { db.exec(`ALTER TABLE icons ADD COLUMN data TEXT NOT NULL DEFAULT ''`); } catch {}
+  // Migration: add port column if missing
+  try { db.exec(`ALTER TABLE cards ADD COLUMN port TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE cards ADD COLUMN main_page TEXT`); } catch {}
 
   // Migration: add settings table if missing
   db.exec(`

@@ -110,6 +110,24 @@ function parseId(val) {
   return isNaN(n) ? null : n;
 }
 
+const ENTITY_TYPE_MAP = {
+  cards: 'cards', machines: 'machines', outils: 'outils',
+  categories: 'categories', os: 'osList', fabriquants: 'fabriquants', icons: 'icons',
+};
+const ENTITY_NEEDS_CARDS_REFRESH = ['machines', 'outils', 'categories'];
+
+function updateState(type, action, item) {
+  const key = ENTITY_TYPE_MAP[type] || type;
+  if (action === 'create') {
+    state[key].push(item);
+  } else if (action === 'update') {
+    const idx = state[key].findIndex(x => x.id === item.id);
+    if (idx !== -1) state[key][idx] = { ...state[key][idx], ...item };
+  } else if (action === 'delete') {
+    state[key] = state[key].filter(x => x.id !== item);
+  }
+}
+
 const COLORBLIND_PALETTES = {
   normal: {
     green: '#3fb950', red: '#f85149', orange: '#d29922', primary: '#1f6feb',
@@ -443,7 +461,8 @@ function attachCardListeners(container) {
       const id = parseInt(el.dataset.deleteCard);
       if (await confirmModal('Supprimer cette carte ?')) {
         await API.deleteCard(id);
-        await refreshDashboard();
+        updateState('cards', 'delete', id);
+        renderCards();
       }
     });
   });
@@ -573,11 +592,11 @@ async function openCardModal(card) {
     <div class="form-row">
       <div class="form-group">
         <label>Port <span class="auto-fill">(vide = port de l'outil)</span></label>
-        <input class="input" id="card-port" value="${card && card.outil_port ? card.outil_port : ''}" placeholder="ex: 8080">
+        <input class="input" id="card-port" value="${esc(card ? (card.port || card.outil_port || '') : '')}" placeholder="ex: 8080">
       </div>
       <div class="form-group">
         <label>Page d'accueil <span class="auto-fill">(vide = page de l'outil)</span></label>
-        <input class="input" id="card-mainpage" value="${esc(card && card.outil_main_page ? card.outil_main_page : '')}" placeholder="/admin">
+        <input class="input" id="card-mainpage" value="${esc(card ? (card.main_page || card.outil_main_page || '') : '')}" placeholder="/admin">
       </div>
     </div>
     <div class="form-group">
@@ -658,6 +677,8 @@ async function openCardModal(card) {
       nom: $('#card-nom').value || `${state.machines.find(m => m.id === parseId($('#card-machine').value))?.nom || ''} - ${state.outils.find(o => o.id === parseId($('#card-outil').value))?.nom || ''}`,
       prefix: $('#card-prefix').value,
       base_url: $('#card-baseurl').value,
+      port: $('#card-port').value || null,
+      main_page: $('#card-mainpage').value || null,
       url: $('#card-url').value,
       categorie_id: parseId($('#card-categorie').value),
       outil_id: parseId($('#card-outil').value),
@@ -670,15 +691,39 @@ async function openCardModal(card) {
     }
 
     try {
+      let result;
       if (editMode) {
-        await API.updateCard(card.id, data);
+        result = await API.updateCard(card.id, data);
       } else {
-        await API.createCard(data);
+        result = await API.createCard(data);
       }
       closeModal();
-      await API.refreshHealth();
-      state.health = await API.health();
-      await refreshDashboard();
+
+      if (editMode) {
+        updateState('cards', 'update', result);
+      } else {
+        const machine = state.machines.find(m => m.id === result.machine_id);
+        const outil = state.outils.find(o => o.id === result.outil_id);
+        const categorie = state.categories.find(c => c.id === result.categorie_id);
+        result.categorie_nom = categorie?.nom || null;
+        result.categorie_couleur = categorie?.couleur || null;
+        result.machine_nom = machine?.nom || null;
+        result.machine_ip = machine?.ip || null;
+        result.outil_nom = outil?.nom || null;
+        result.outil_port = outil?.port || null;
+        result.outil_main_page = outil?.main_page || null;
+        result.machine_icon_id = machine?.icon_id || null;
+        result.outil_icon_id = outil?.icon_id || null;
+        result.categorie_icon_id = categorie?.icon_id || null;
+        updateState('cards', 'create', result);
+      }
+
+      state.health[editMode ? card.id : result.id] = { online: null, ms: null };
+      renderCards();
+      API.refreshHealth().then(async () => {
+        state.health = await API.health();
+        renderCards();
+      }).catch(() => {});
     } catch (err) {
       showToast('Erreur : ' + err.message, 'error');
     }
@@ -970,7 +1015,7 @@ async function renderSettingsTable() {
           if (!await confirmModal('Supprimer définitivement ce compte ?')) return;
           try {
             await API.deleteUser(id);
-            await loadAllEntities();
+            updateState('users', 'delete', id);
             renderSettingsTable();
           } catch (err) {
       showToast('Erreur : ' + err.message, 'error');
@@ -1054,9 +1099,14 @@ async function renderSettingsTable() {
       const id = parseInt(idStr);
       if (!await confirmModal('Supprimer définitivement ?')) return;
       await deleteMethods[type](id);
-      await loadAllEntities();
-      await renderSettingsTable();
-      if (state.view === 'dashboard') await refreshDashboard();
+      updateState(type, 'delete', id);
+      if (state.view === 'dashboard' && ENTITY_NEEDS_CARDS_REFRESH.includes(type)) {
+        state.cards = await API.cards();
+        await API.refreshHealth();
+        state.health = await API.health();
+        renderCards();
+      }
+      renderSettingsTable();
     });
   });
 }
@@ -1172,13 +1222,15 @@ async function openUserModal(user) {
     if (rawPassword) data.password = await sha256(rawPassword);
 
     try {
+      let result;
       if (editMode) {
-        await API.updateUser(user.id, data);
+        result = await API.updateUser(user.id, data);
       } else {
-        await API.createUser(data);
+        result = await API.createUser(data);
       }
       closeModal();
-      await loadAllEntities();
+      if (!editMode) result.password = undefined;
+      updateState('users', editMode ? 'update' : 'create', result);
       renderSettingsTable();
     } catch (err) {
       showToast('Erreur : ' + err.message, 'error');
@@ -1330,16 +1382,17 @@ async function openEntityModal(entityType, label, fieldDefs, item) {
         icons: editMode ? (id, d) => API.updateIcon(id, d) : (d) => API.createIcon(d),
       };
       const method = apiMethods[entityType];
+      let result;
       if (editMode) {
-        await method(item.id, data);
+        result = await method(item.id, data);
       } else {
-        await method(data);
+        result = await method(data);
       }
       closeModal();
-      await loadAllEntities();
+      updateState(entityType, editMode ? 'update' : 'create', result);
 
+      let cascadeChanged = false;
       if (editMode && (entityType === 'machines' || entityType === 'outils')) {
-        const changed = [];
         for (const card of state.cards) {
           const match = entityType === 'machines' ? card.machine_id === item.id : card.outil_id === item.id;
           if (!match) continue;
@@ -1367,21 +1420,25 @@ async function openEntityModal(entityType, label, fieldDefs, item) {
           }
 
           if (Object.keys(update).length) {
-            await API.updateCard(card.id, update);
-            changed.push(card.id);
+            const updatedCard = await API.updateCard(card.id, update);
+            updateState('cards', 'update', { ...card, ...updatedCard });
+            cascadeChanged = true;
           }
         }
-        if (changed.length) {
+        if (cascadeChanged) {
           await API.refreshHealth();
-          await loadAllEntities();
           state.health = await API.health();
         }
+      }
+
+      if (ENTITY_NEEDS_CARDS_REFRESH.includes(entityType)) {
+        state.cards = await API.cards();
+        if (state.view === 'dashboard') renderCards();
       }
 
       await renderSettingsTable();
       if (state.view === 'dashboard') {
         await populateCategoryFilter();
-        await refreshDashboard();
       }
     } catch (err) {
       showToast('Erreur : ' + err.message, 'error');
