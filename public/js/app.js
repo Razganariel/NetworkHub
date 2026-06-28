@@ -750,10 +750,12 @@ async function renderProfile() {
     <div class="form-group">
       <label>Nom d'utilisateur</label>
       <input class="input" id="profile-username" value="${esc(u.username)}">
+      <div class="form-error" id="profile-username-error"></div>
     </div>
     <div class="form-group">
       <label>Email</label>
       <input class="input" id="profile-email" value="${esc(u.email || '')}" type="email">
+      <div class="form-error" id="profile-email-error"></div>
     </div>
     <div class="form-group">
       <label>Mot de passe <button class="btn btn-sm" id="profile-change-pwd" style="margin-left:.5rem">Modifier</button></label>
@@ -767,20 +769,32 @@ async function renderProfile() {
   `;
 
   $('#profile-save').addEventListener('click', async () => {
+    const username = $('#profile-username').value.trim();
+    const email = $('#profile-email').value.trim();
     const data = {
       nom: $('#profile-nom').value,
       prenom: $('#profile-prenom').value,
-      username: $('#profile-username').value,
-      email: $('#profile-email').value,
+      username,
+      email,
     };
-    if (!data.username) { showToast('Le nom d\'utilisateur est requis', 'error'); return; }
+
+    const errUsername = $('#profile-username-error');
+    const errEmail = $('#profile-email-error');
+    [errUsername, errEmail].forEach(el => { if (el) el.textContent = ''; });
+    if (!username) { if (errUsername) errUsername.textContent = 'Nom d\'utilisateur requis'; else showToast('Le nom d\'utilisateur est requis', 'error'); return; }
+
     try {
       state.me = await API.updateMe(data);
       $('#profile-msg').textContent = 'Profil enregistré.';
+      $('#profile-msg').style.color = 'var(--green)';
       setTimeout(() => { $('#profile-msg').textContent = ''; }, 3000);
     } catch (err) {
-      $('#profile-msg').textContent = 'Erreur : ' + err.message;
-      $('#profile-msg').style.color = 'var(--red)';
+      if (err.message === 'Invalid email format' && errEmail) {
+        errEmail.textContent = 'Format d\'email invalide';
+      } else {
+        $('#profile-msg').textContent = 'Erreur : ' + err.message;
+        $('#profile-msg').style.color = 'var(--red)';
+      }
     }
   });
 
@@ -1177,10 +1191,12 @@ async function openUserModal(user) {
     <div class="form-group">
       <label>Nom d'utilisateur</label>
       <input class="input" id="user-username" value="${esc(user ? user.username : '')}">
+      <div class="form-error" id="user-username-error"></div>
     </div>
     <div class="form-group">
       <label>Email</label>
       <input class="input" id="user-email" value="${esc(user ? (user.email || '') : '')}" type="email">
+      <div class="form-error" id="user-email-error"></div>
     </div>
     ${editMode ? `
     <div class="form-group">
@@ -1189,6 +1205,7 @@ async function openUserModal(user) {
     <div class="form-group">
       <label>Mot de passe</label>
       <input class="input" id="user-password" type="password" placeholder="Mot de passe">
+      <div class="form-error" id="user-password-error"></div>
     </div>`}
     <div class="form-group">
       <label>Rôle</label>
@@ -1209,8 +1226,14 @@ async function openUserModal(user) {
     const passwordEl = $('#user-password');
     const rawPassword = passwordEl ? passwordEl.value : '';
     const email = $('#user-email').value.trim();
-    if (!username) { showToast('Le nom d\'utilisateur est requis', 'error'); return; }
-    if (!editMode && !rawPassword) { showToast('Le mot de passe est requis', 'error'); return; }
+
+    const errUsername = $('#user-username-error');
+    const errPassword = $('#user-password-error');
+    const errEmail = $('#user-email-error');
+    [errUsername, errPassword, errEmail].forEach(el => { if (el) el.textContent = ''; });
+
+    if (!username) { if (errUsername) errUsername.textContent = 'Nom d\'utilisateur requis'; else showToast('Le nom d\'utilisateur est requis', 'error'); return; }
+    if (!editMode && !rawPassword) { if (errPassword) errPassword.textContent = 'Mot de passe requis'; else showToast('Le mot de passe est requis', 'error'); return; }
 
     const data = {
       nom: $('#user-nom').value,
@@ -1233,7 +1256,11 @@ async function openUserModal(user) {
       updateState('users', editMode ? 'update' : 'create', result);
       renderSettingsTable();
     } catch (err) {
-      showToast('Erreur : ' + err.message, 'error');
+      if (err.message === 'Invalid email format' && errEmail) {
+        errEmail.textContent = 'Format d\'email invalide';
+      } else {
+        showToast('Erreur : ' + err.message, 'error');
+      }
     }
   });
 
