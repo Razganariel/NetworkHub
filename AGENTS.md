@@ -82,6 +82,9 @@ Filtres disponibles : `?search=`, `?categorie_id=`, `?machine_id=`
 - **Settings :** table `settings` key/value, TTL/timeout health check lus depuis la BDD avec fallback `.env`
 - **Mode daltonien :** 5 palettes (normal, protanopie, deutéranopie, tritanopie, achromatopsie), ajuste les CSS variables `--green`/`--red`/`--orange`/`--primary` + formes des dots en achromatopsie
 - **Icônes stockées en BDD :** colonne `data` dans la table `icons`, servies via `GET /api/icons/:id/file`, plus de dépendance au filesystem
+- **`updateState(type, action, item)` :** mise à jour locale de `state.*` après API (create/update/delete), évite les refetchs inutiles. `ENTITY_NEEDS_CARDS_REFRESH` déclenche un refetch des cards pour machines/outils/catégories.
+- **`getCardPort(card)` :** extrait le port depuis l'URL via `new URL(card.url)`, fallback `card.outil_port`
+- **Card `port`/`main_page` stockés en BDD :** tables `cards` a désormais ses propres colonnes `port TEXT` et `main_page TEXT` pour que les overrides persistent
 - **Pas de build :** vanilla JS frontend, pas de bundler, pas de TypeScript
 
 ## Conventions
