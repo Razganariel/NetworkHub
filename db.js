@@ -5,7 +5,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.join(__dirname, 'data.db');
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data.db');
 const SEED_PATH = path.join(__dirname, 'seed.json');
 
 let db;

@@ -81,6 +81,7 @@ Filtres disponibles : `?search=`, `?categorie_id=`, `?machine_id=`
 - **Logger :** 4 niveaux (INFO/WARN/ERROR/DEBUG), activable dans Gestion → Paramètres (mode debug)
 - **Settings :** table `settings` key/value, TTL/timeout health check lus depuis la BDD avec fallback `.env`
 - **Mode daltonien :** 5 palettes (normal, protanopie, deutéranopie, tritanopie, achromatopsie), ajuste les CSS variables `--green`/`--red`/`--orange`/`--primary` + formes des dots en achromatopsie
+- **HTTP only :** pas de HTTPS intégré — l'app écoute en clair sur `PORT` (3000). Le SSL est délégué au reverse proxy (Nginx/Caddy/Traefik). Pas de certs auto-signés, pas de `selfsigned`, pas de redirecteur HTTP→HTTPS.
 - **Icônes stockées en BDD :** colonne `data` dans la table `icons`, servies via `GET /api/icons/:id/file`, plus de dépendance au filesystem
 - **`updateState(type, action, item)` :** mise à jour locale de `state.*` après API (create/update/delete), évite les refetchs inutiles. `ENTITY_NEEDS_CARDS_REFRESH` déclenche un refetch des cards pour machines/outils/catégories.
 - **`getCardPort(card)` :** extrait le port depuis l'URL via `new URL(card.url)`, fallback `card.outil_port`
