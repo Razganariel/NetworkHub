@@ -4,13 +4,12 @@ services:
     container_name: networkhub
     ports:
       - "3331:3331"
+    user: root
     volumes:
-      - networkhub-data:/app/data
+      - ${HOME}/application/network-hub:/app/data
     environment:
       - PORT=3331
       - NODE_ENV=production
       - DB_PATH=/app/data/data.db
+    mem_limit: 256m
     restart: unless-stopped
-
-volumes:
-  networkhub-data:
