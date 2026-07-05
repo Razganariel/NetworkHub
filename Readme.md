@@ -1,18 +1,30 @@
 # NetworkHub
 
-Dashboard auto-hébergé pour gérer et surveiller les services réseau d'un homelab.
+Dashboard auto-hébergé pour centraliser, organiser et surveiller l'ensemble des services et machines d'un homelab depuis une interface unique.
 
-Liste les machines, outils/services et cards (liens), avec monitoring de santé (HTTP ping).
+## Fonctionnalités
+
+- **Inventaire des machines** — liste des serveurs, NAS, SBC (Radxa, Raspberry Pi…) avec OS, fabricant et icône
+- **Catalogue d'outils/services** — Zabbix, Pi-hole, Home Assistant, Uptime Kuma… classés par catégorie (Monitoring, DNS, VPN…)
+- **Cards (liens rapides)** — accès à chaque service avec URL, port, préfixe HTTP/HTTPS et icône
+- **Monitoring de santé** — vérification périodique (HTTP ping) de chaque card avec affichage du statut (en ligne/hors ligne/temps de réponse)
+- **Authentication** — comptes utilisateurs avec rôles (admin/user), sessions 24h, protection rate-limiting
+- **Mode daltonien** — 5 palettes de couleurs (normal, protanopie, deutéranopie, tritanopie, achromatopsie) avec adaptation des formes
+- **Thème dark/light** — basculement en un clic
+- **Paramètres** — configuration du debug, TTL/timeout healthcheck, mode daltonien
+- **Déploiement conteneurisé** — Docker/Podman (multi-stage, non-root, volumes persistants)
 
 ## Stack
 
 - **Runtime :** Node.js (ESM)
 - **Backend :** Express 4.21
 - **Base de données :** SQLite via `better-sqlite3` (synchrone, WAL, FK)
-- **Frontend :** Vanilla JS SPA — CSS custom properties (thème dark/light + mode daltonien)
-- **Icônes :** stockées en base de données (SVG)
+- **Frontend :** Vanilla JS SPA — CSS custom properties (dark/light + daltonien)
+- **Icônes :** stockées en base de données (SVG), seed automatique au premier lancement
 
 ## Démarrage rapide
+
+### Sans conteneur
 
 ```bash
 cp .env.dev .env   # ou personnalisez .env
@@ -20,7 +32,17 @@ npm install
 npm start          # ou : npm run dev (watch mode)
 ```
 
-Ouvrir [http://localhost:3000](http://localhost:3000) (configurable via `PORT`).
+Ouvrir [http://localhost:3000](http://localhost:3000) — configurable via `PORT`.
+
+### Avec Docker/Podman
+
+```bash
+docker compose up -d
+# ou
+podman-compose up -d
+```
+
+Le premier lancement crée automatiquement la base de données avec les données initiales (catégories, outils, OS, fabricants, icônes). Aucun compte administrateur par défaut — la page de configuration initiale s'affiche au premier accès.
 
 ## Structure
 
@@ -30,8 +52,10 @@ NetworkHub/
 ├── db.js            # Init DB, schéma, seed data
 ├── logger.js        # Logger (INFO/WARN/ERROR/DEBUG)
 ├── package.json
+├── Dockerfile       # Image multi-stage
+├── docker-compose.yml
 ├── .env             # Variables d'environnement (ignoré par git)
-├── .env.dev         # Template environnement de développement (ignoré par git)
+├── .env.dev         # Template développement (ignoré par git)
 ├── data.db          # Base SQLite (auto-générée, ignorée par git)
 └── public/
     ├── index.html   # SPA shell
