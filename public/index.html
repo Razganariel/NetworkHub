@@ -4,13 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NetworkHub</title>
+<link rel="icon" type="image/png" href="icons/favicon.png">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <div id="login-page" style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg);padding:1rem">
+  <div id="login-page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:var(--bg);padding:1rem;gap:1.5rem">
+    <div style="width:100%">
+      <img src="icons/baniere.png" alt="NetworkHub" style="display:block;width:50%;height:auto;margin:auto;border-radius:12px">
+    </div>
     <div style="width:100%;max-width:380px">
-      <h2 style="font-size:1.5rem;font-weight:700;margin-bottom:.5rem;color:var(--text)">NetworkHub</h2>
-      <p style="color:var(--text-muted);margin-bottom:1.5rem;font-size:.9rem">Connectez-vous pour accéder au tableau de bord</p>
       <div class="form-group">
         <label>Nom d'utilisateur</label>
         <input class="input" id="login-username" autocomplete="username" style="background:var(--bg-card)">
@@ -24,9 +26,11 @@
     </div>
   </div>
 
-  <div id="setup-page" style="display:none;align-items:center;justify-content:center;min-height:100vh;background:var(--bg);padding:1rem">
+  <div id="setup-page" style="display:none;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:var(--bg);padding:1rem;gap:1rem">
+    <div style="width:100%">
+      <img src="icons/baniere.png" alt="NetworkHub" style="display:block;width:50%;height:auto;margin:auto;border-radius:12px">
+    </div>
     <div style="width:100%;max-width:420px">
-      <h2 style="font-size:1.5rem;font-weight:700;margin-bottom:.5rem;color:var(--text)">NetworkHub</h2>
       <p style="color:var(--text-muted);margin-bottom:.25rem;font-size:.9rem">Bienvenue sur votre tableau de bord réseau auto-hébergé.</p>
       <p style="color:var(--text-muted);margin-bottom:1.5rem;font-size:.85rem">Créez votre compte administrateur pour commencer.</p>
       <div id="setup-form"></div>
@@ -35,7 +39,7 @@
 
   <nav class="nav" id="app-nav" style="display:none">
     <div class="nav-inner">
-      <a class="nav-brand" href="#">NetworkHub</a>
+      <a class="nav-brand" href="#"><img src="icons/icon.png" alt="" style="height:1.2rem;width:auto;vertical-align:middle;margin-right:.4rem">NetworkHub</a>
       <div class="nav-links">
         <button class="nav-btn active" data-view="dashboard">Tableau de bord</button>
         <button class="nav-btn" data-view="settings">Gestion</button>
